@@ -32,7 +32,7 @@ def build_manifest(
     project_path: str | Path,
     profile_name: Optional[str] = None,
     target: Optional[str] = None,
-    exclude_pattern: Optional[str] = None,
+    exclude_patterns: Optional[list[str]] = None,
     catalog_path: Optional[Path] = None,
     manifest_path: Optional[Path] = None,
 ) -> ConvertResult:
@@ -43,8 +43,9 @@ def build_manifest(
         project_path: Path to the dbt project root (must contain dbt_project.yml and profiles.yml).
         profile_name: Profile name to use. Defaults to the first profile found.
         target: Target name within the profile. Defaults to the profile's default target.
-        exclude_pattern: Regex pattern matched against model names; matching models are excluded.
-            Defaults to None (no models excluded). Example: r"^(stg_|staging_)" to skip staging.
+        exclude_patterns: List of regex patterns matched against model names; a model is excluded
+            if any pattern matches. Defaults to None (no models excluded).
+            Example: [r"^stg_", r"^int_"] to skip staging and intermediate models.
         catalog_path: Path to catalog.json. Defaults to <project_path>/target/catalog.json.
         manifest_path: Path to manifest.json. Defaults to <project_path>/target/manifest.json.
 
@@ -103,7 +104,7 @@ def build_manifest(
 
         model_name: str = catalog_node.metadata.name or key.split(".")[-1]
 
-        if exclude_pattern and re.search(exclude_pattern, model_name):
+        if exclude_patterns and any(re.search(p, model_name) for p in exclude_patterns):
             continue
 
         # Find matching manifest node
@@ -178,7 +179,7 @@ def from_dbt_project(
     project_path: str | Path,
     profile_name: Optional[str] = None,
     target: Optional[str] = None,
-    exclude_pattern: Optional[str] = None,
+    exclude_patterns: Optional[list[str]] = None,
     catalog_path: Optional[Path] = None,
     manifest_path: Optional[Path] = None,
 ) -> WrenEngine:
@@ -189,7 +190,8 @@ def from_dbt_project(
         project_path: Path to the dbt project root (must contain dbt_project.yml and profiles.yml).
         profile_name: Profile name to use.
         target: Target name within the profile.
-        exclude_pattern: Regex pattern matched against model names; matching models are excluded.
+        exclude_patterns: List of regex patterns matched against model names; a model is excluded
+            if any pattern matches.
         catalog_path: Path to catalog.json. Defaults to <project_path>/target/catalog.json.
         manifest_path: Path to manifest.json. Defaults to <project_path>/target/manifest.json.
 
@@ -200,7 +202,7 @@ def from_dbt_project(
         project_path=project_path,
         profile_name=profile_name,
         target=target,
-        exclude_pattern=exclude_pattern,
+        exclude_patterns=exclude_patterns,
         catalog_path=catalog_path,
         manifest_path=manifest_path,
     )

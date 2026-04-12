@@ -37,12 +37,21 @@ def test_build_manifest_has_models(dbt_project):
     assert "stg_orders" in model_names
 
 
-def test_build_manifest_exclude_pattern(dbt_project):
-    result = build_manifest(dbt_project, exclude_pattern=r"^(stg_|staging_)")
+def test_build_manifest_exclude_patterns(dbt_project):
+    result = build_manifest(dbt_project, exclude_patterns=[r"^stg_", r"^staging_"])
     model_names = {m.name for m in result.manifest.models}
     assert "customers" in model_names
     assert "orders" in model_names
     assert "stg_orders" not in model_names
+
+
+def test_build_manifest_exclude_multiple_independent_patterns(dbt_project):
+    # customers matches ^cust, orders matches ^ord — both excluded
+    result = build_manifest(dbt_project, exclude_patterns=[r"^cust", r"^ord"])
+    model_names = {m.name for m in result.manifest.models}
+    assert "customers" not in model_names
+    assert "orders" not in model_names
+    assert "stg_orders" in model_names
 
 
 def test_build_manifest_has_relationship(dbt_project):

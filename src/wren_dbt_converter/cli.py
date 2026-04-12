@@ -53,11 +53,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--exclude",
+        action="append",
         default=None,
         metavar="PATTERN",
         help=(
             "Regex pattern matched against model names; matching models are excluded. "
-            "Example: --exclude '^(stg_|staging_)' to skip staging models."
+            "May be repeated to add multiple patterns (OR logic). "
+            "Example: --exclude '^stg_' --exclude '^int_'"
         ),
     )
 
@@ -68,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
             project_path=args.project_path,
             profile_name=args.profile_name,
             target=args.target,
-            exclude_pattern=args.exclude,
+            exclude_patterns=args.exclude,
             catalog_path=args.catalog,
             manifest_path=args.manifest,
         )

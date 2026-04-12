@@ -52,12 +52,29 @@ def test_cli_all_models_included_by_default(dbt_project, tmp_path):
     assert "stg_orders" in model_names
 
 
-def test_cli_exclude_pattern(dbt_project, tmp_path):
+def test_cli_exclude_single_pattern(dbt_project, tmp_path):
     output_dir = tmp_path / "out"
-    main([str(dbt_project), "--exclude", "^(stg_|staging_)", "--output", str(output_dir)])
+    main([str(dbt_project), "--exclude", "^stg_", "--output", str(output_dir)])
     data = json.loads((output_dir / "mdl.json").read_text())
     model_names = [m["name"] for m in data["models"]]
     assert "stg_orders" not in model_names
+    assert "customers" in model_names
+
+
+def test_cli_exclude_multiple_patterns(dbt_project, tmp_path):
+    output_dir = tmp_path / "out"
+    main(
+        [
+            str(dbt_project),
+            "--exclude", "^stg_",
+            "--exclude", "^ord",
+            "--output", str(output_dir),
+        ]
+    )
+    data = json.loads((output_dir / "mdl.json").read_text())
+    model_names = [m["name"] for m in data["models"]]
+    assert "stg_orders" not in model_names
+    assert "orders" not in model_names
     assert "customers" in model_names
 
 
