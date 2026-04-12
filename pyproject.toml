@@ -11,6 +11,9 @@ dependencies = [
     "wren-engine>=0.2.1",
 ]
 
+[project.scripts]
+wren-dbt-converter = "wren_dbt_converter.cli:main"
+
 [dependency-groups]
 test = ["pytest>=9.0.3", "pytest-cov>=7.1.0"]
 lint = ["ruff", "ty"]
