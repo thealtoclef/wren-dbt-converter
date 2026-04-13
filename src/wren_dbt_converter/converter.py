@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from wren import DataSource as WrenDataSource
-from wren import WrenEngine
+from wren.memory.schema_indexer import describe_schema
 
-from .engine_builder import EngineConfig, build_engine
 from .models.data_source import get_active_connection
 from .models.wren_mdl import TableReference, WrenMDLManifest, WrenModel
 from .parsers.artifacts import load_catalog, load_manifest
@@ -23,6 +22,7 @@ class ConvertResult:
     manifest: WrenMDLManifest
     data_source: WrenDataSource
     connection_info: dict[str, Any]
+    schema_description: str
 
     @property
     def manifest_str(self) -> str:
@@ -173,48 +173,5 @@ def build_manifest(
         manifest=wren_manifest,
         data_source=data_source,
         connection_info=connection_info,
-    )
-
-
-def from_dbt_project(
-    project_path: str | Path,
-    profile_name: Optional[str] = None,
-    target: Optional[str] = None,
-    exclude_patterns: Optional[list[str]] = None,
-    catalog_path: Optional[Path] = None,
-    manifest_path: Optional[Path] = None,
-    engine_config: Optional[EngineConfig] = None,
-) -> WrenEngine:
-    """
-    Convert a dbt project to a ready-to-use WrenEngine instance.
-
-    Args:
-        project_path: Path to the dbt project root (must contain dbt_project.yml and profiles.yml).
-        profile_name: Profile name to use.
-        target: Target name within the profile.
-        exclude_patterns: List of regex patterns matched against model names; a model is excluded
-            if any pattern matches.
-        catalog_path: Path to catalog.json. Defaults to <project_path>/target/catalog.json.
-        manifest_path: Path to manifest.json. Defaults to <project_path>/target/manifest.json.
-        engine_config: Optional WrenEngine parameters (function_path, fallback, config).
-
-    Returns:
-        WrenEngine constructed from the dbt project's MDL manifest.
-    """
-    result = build_manifest(
-        project_path=project_path,
-        profile_name=profile_name,
-        target=target,
-        exclude_patterns=exclude_patterns,
-        catalog_path=catalog_path,
-        manifest_path=manifest_path,
-    )
-    ec = engine_config or EngineConfig()
-    return build_engine(
-        result.manifest,
-        result.data_source,
-        result.connection_info,
-        function_path=ec.function_path,
-        fallback=ec.fallback,
-        config=ec.config,
+        schema_description=describe_schema(wren_manifest.to_camel_dict()),
     )

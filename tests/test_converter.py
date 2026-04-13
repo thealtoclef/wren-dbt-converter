@@ -118,6 +118,13 @@ def test_not_null_propagated(dbt_project):
     assert by_name["customer_id"].not_null is True
 
 
+def test_schema_description_is_populated(dbt_project):
+    result = build_manifest(dbt_project)
+    assert isinstance(result.schema_description, str)
+    assert len(result.schema_description) > 0
+    assert "customers" in result.schema_description
+
+
 def test_model_description_in_properties(dbt_project):
     result = build_manifest(dbt_project)
     customers = next(m for m in result.manifest.models if m.name == "customers")
