@@ -24,6 +24,15 @@ def test_cli_produces_output_files(dbt_project, tmp_path):
     main([str(dbt_project), "--output", str(output_dir)])
     assert (output_dir / "mdl.json").exists()
     assert (output_dir / "connection.json").exists()
+    assert (output_dir / "schema_description.txt").exists()
+
+
+def test_cli_schema_description_non_empty(dbt_project, tmp_path):
+    output_dir = tmp_path / "out"
+    main([str(dbt_project), "--output", str(output_dir)])
+    content = (output_dir / "schema_description.txt").read_text()
+    assert len(content) > 0
+    assert "customers" in content
 
 
 def test_cli_mdl_json_valid(dbt_project, tmp_path):
