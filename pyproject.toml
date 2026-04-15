@@ -3,7 +3,7 @@ name = "wren-dbt-converter"
 version = "0.1.0"
 description = "Convert dbt projects to Wren MDL and WrenEngine instances"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14,<4"
 license = "MIT"
 dependencies = [
     "dbt-artifacts-parser>=0.13.0",
