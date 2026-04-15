@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/thealtoclef/dbt-wren-converter/main/wren-mdl/mdl.schema.json",
+  "$id": "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json",
   "title": "WrenMDL Manifest Schema",
   "description": "A schema for WrenMDL manifest file",
   "$defs": {
@@ -31,10 +31,7 @@
         },
         "expression": {
           "description": "the expression of the column. If the column is calculated, this field is required",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "isHidden": {
           "description": "whether the column is hidden or not",
@@ -86,18 +83,11 @@
                   ]
                 }
               },
-              "required": [
-                "value",
-                "dataType"
-              ],
+              "required": ["value", "dataType"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "name",
-            "operator",
-            "requiredProperties"
-          ],
+          "required": ["name", "operator", "requiredProperties"],
           "additionalProperties": false
         },
         "properties": {
@@ -108,10 +98,7 @@
           }
         }
       },
-      "required": [
-        "name",
-        "type"
-      ],
+      "required": ["name", "type"],
       "additionalProperties": false
     },
     "sessionProperty": {
@@ -128,16 +115,10 @@
         },
         "defaultExpr": {
           "description": "the default SQL expression of the session property",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       },
-      "required": [
-        "name",
-        "required"
-      ],
+      "required": ["name", "required"],
       "additionalProperties": false
     }
   },
@@ -183,7 +164,7 @@
           },
           "refSql": {
             "description": "(WIP) the sql reference of the model",
-            "type": "string",
+            "type": "string", 
             "minLength": 1
           },
           "baseObject": {
@@ -206,9 +187,7 @@
                 "minLength": 1
               }
             },
-            "required": [
-              "table"
-            ]
+            "required": ["table"]
           },
           "columns": {
             "description": "the list of columns",
@@ -252,11 +231,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "name",
-                "requiredProperties",
-                "condition"
-              ],
+              "required": ["name", "requiredProperties", "condition"],
               "additionalProperties": false
             }
           },
@@ -264,36 +239,15 @@
             "description": "the customize properties of the model",
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "null"
-              ]
+              "type": ["string", "number", "boolean", "object", "array", "null"]
             }
           }
         },
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "oneOf": [
-          {
-            "required": [
-              "refSql"
-            ]
-          },
-          {
-            "required": [
-              "baseObject"
-            ]
-          },
-          {
-            "required": [
-              "tableReference"
-            ]
-          }
+          { "required": ["refSql"] },
+          { "required": ["baseObject"] },
+          { "required": ["tableReference"] }
         ],
         "additionalProperties": false
       }
@@ -323,12 +277,7 @@
           "joinType": {
             "description": "the join type of the relationship",
             "type": "string",
-            "enum": [
-              "ONE_TO_ONE",
-              "ONE_TO_MANY",
-              "MANY_TO_ONE",
-              "MANY_TO_MANY"
-            ]
+            "enum": ["ONE_TO_ONE", "ONE_TO_MANY", "MANY_TO_ONE", "MANY_TO_MANY"]
           },
           "condition": {
             "description": "the condition of the relationship",
@@ -339,23 +288,11 @@
             "description": "the customize properties of the relationship",
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "null"
-              ]
+              "type": ["string", "number", "boolean", "object", "array", "null"]
             }
           }
         },
-        "required": [
-          "name",
-          "models",
-          "joinType",
-          "condition"
-        ]
+        "required": ["name", "models", "joinType", "condition"]
       }
     },
     "metrics": {
@@ -380,14 +317,14 @@
             "description": "the list of dimensions",
             "type": "array",
             "items": {
-              "$ref": "#/$defs/column"
+                "$ref": "#/$defs/column"
             }
           },
           "measure": {
             "description": "the list of measures",
             "type": "array",
             "items": {
-              "$ref": "#/$defs/column"
+                "$ref": "#/$defs/column"
             },
             "minItems": 1
           },
@@ -427,11 +364,7 @@
                   }
                 }
               },
-              "required": [
-                "name",
-                "refColumn",
-                "dateParts"
-              ]
+              "required": ["name", "refColumn", "dateParts"]
             }
           },
           "cached": {
@@ -445,23 +378,11 @@
           "properties": {
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "null"
-              ]
+              "type": ["string", "number", "boolean", "object", "array", "null"]
             }
           }
         },
-        "required": [
-          "name",
-          "baseObject",
-          "dimension",
-          "measure"
-        ]
+        "required": ["name", "baseObject", "dimension", "measure"]
       }
     },
     "views": {
@@ -485,21 +406,11 @@
             "description": "the customize properties of the view",
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "null"
-              ]
+              "type": ["string", "number", "boolean", "object", "array", "null"]
             }
           }
         },
-        "required": [
-          "name",
-          "statement"
-        ]
+        "required": ["name", "statement"]
       }
     },
     "enumDefinitions": {
@@ -536,47 +447,25 @@
                   "description": "the customize properties of the member",
                   "type": "object",
                   "additionalProperties": {
-                    "type": [
-                      "string",
-                      "number",
-                      "boolean",
-                      "object",
-                      "array",
-                      "null"
-                    ]
+                    "type": ["string", "number", "boolean", "object", "array", "null"]
                   }
                 }
               },
-              "required": [
-                "name"
-              ]
+              "required": ["name"]
             }
           },
           "properties": {
             "description": "the customize properties of the enum",
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "null"
-              ]
+              "type": ["string", "number", "boolean", "object", "array", "null"]
             }
           }
         },
-        "required": [
-          "name",
-          "values"
-        ]
+        "required": ["name", "values"]
       }
     }
   },
-  "required": [
-    "catalog",
-    "schema"
-  ],
+  "required": ["catalog", "schema"],
   "additionalProperties": false
 }
