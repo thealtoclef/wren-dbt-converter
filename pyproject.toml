@@ -17,10 +17,18 @@ wren-dbt-converter = "wren_dbt_converter.cli:main"
 [dependency-groups]
 test = ["pytest>=9.0.3", "pytest-cov>=7.1.0"]
 lint = ["ruff", "ty"]
+dev = ["datamodel-code-generator"]
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12"]
 build-backend = "uv_build"
+
+[tool.datamodel-codegen]
+input = "wren-mdl/mdl.schema.json"
+input-file-type = "jsonschema"
+output = "src/wren_dbt_converter/models/mdl.py"
+output-model-type = "pydantic_v2.BaseModel"
+formatters = ["ruff-check", "ruff-format"]
 
 [tool.pytest]
 testpaths = ["tests"]
