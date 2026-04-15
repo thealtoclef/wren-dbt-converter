@@ -30,8 +30,10 @@ output = "src/wren_dbt_converter/models/mdl.py"
 output-model-type = "pydantic_v2.BaseModel"
 snake-case-field = "true"
 use-type-alias = true
+allow-population-by-field-name = "true"
 formatters = ["ruff-check", "ruff-format"]
 target-python-version = "3.14"
+target-pydantic-version = "2.11"
 disable-timestamp = true
 
 [tool.pytest]

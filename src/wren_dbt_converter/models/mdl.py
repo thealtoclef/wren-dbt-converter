@@ -7,6 +7,9 @@ from typing import Any, Literal
 
 
 class TableReference(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     catalog: str | None = None
     schema_: str | None = Field(None, alias="schema")
     table: constr(min_length=1)
@@ -23,6 +26,9 @@ class JoinType(StrEnum):
 
 
 class Relationship(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(..., description="the name of the relationship")
     models: list[Model] = Field(
         ..., description="the list of models", max_length=2, min_length=2
@@ -50,6 +56,9 @@ class DatePart(StrEnum):
 
 
 class TimeGrainItem(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(
         ..., description="the name of the time grain field"
     )
@@ -66,6 +75,9 @@ class TimeGrainItem(BaseModel):
 
 
 class View(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(..., description="the name of the view")
     statement: constr(min_length=1) = Field(
         ..., description="the sql statement of the view"
@@ -76,6 +88,9 @@ class View(BaseModel):
 
 
 class Value(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(..., description="the name of the member")
     value: constr(min_length=1) | None = Field(
         None,
@@ -87,6 +102,9 @@ class Value(BaseModel):
 
 
 class EnumDefinition(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(..., description="the name of the enum")
     values: list[Value]
     properties: (
@@ -111,6 +129,7 @@ class DataType(StrEnum):
 class Threshold(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     value: str = Field(..., description="the value of the threshold")
     data_type: DataType = Field(
@@ -121,6 +140,7 @@ class Threshold(BaseModel):
 class SessionProperty(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: constr(min_length=1) = Field(
         ..., description="the name of the session property"
@@ -138,6 +158,7 @@ class SessionProperty(BaseModel):
 class RowLevelAccessControl(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: str = Field(..., description="the name of the access-control rule")
     required_properties: list[SessionProperty] = Field(
@@ -154,6 +175,7 @@ class RowLevelAccessControl(BaseModel):
 class ColumnLevelAccessControl(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: str = Field(..., description="the name of the access-control rule")
     operator: Operator = Field(
@@ -174,6 +196,7 @@ class ColumnLevelAccessControl(BaseModel):
 class Column(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: constr(min_length=1) = Field(..., description="the name of the column")
     type: constr(min_length=1) = Field(..., description="the type of the column")
@@ -209,6 +232,7 @@ class Column(BaseModel):
 class Models(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: constr(min_length=1) = Field(..., description="the name of the model")
     ref_sql: constr(min_length=1) = Field(
@@ -247,6 +271,7 @@ class Models(BaseModel):
 class Models1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: constr(min_length=1) = Field(..., description="the name of the model")
     ref_sql: constr(min_length=1) | None = Field(
@@ -285,6 +310,7 @@ class Models1(BaseModel):
 class Models2(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     name: constr(min_length=1) = Field(..., description="the name of the model")
     ref_sql: constr(min_length=1) | None = Field(
@@ -321,6 +347,9 @@ class Models2(BaseModel):
 
 
 class Metric(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+    )
     name: constr(min_length=1) = Field(..., description="the name of the metric")
     base_object: constr(min_length=1) = Field(
         ..., alias="baseObject", description="the base object of the metric"
@@ -346,6 +375,7 @@ class Metric(BaseModel):
 class WrenmdlManifestSchema(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        validate_by_name=True,
     )
     field_schema: Literal[
         "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json"
