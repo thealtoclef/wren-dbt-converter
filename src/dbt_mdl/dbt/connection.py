@@ -20,25 +20,27 @@ from .models import DbtConnection, DbtProfiles
 
 
 def _build_postgres_info(conn: DbtConnection) -> dict[str, Any]:
-    db = getattr(conn, "dbname", None) or getattr(conn, "database", None) or ""
-    port = str(conn.port) if getattr(conn, "port", None) else "5432"
+    extra = conn.model_extra or {}
+    db = extra.get("dbname") or extra.get("database") or ""
+    port = str(extra["port"]) if "port" in extra else "5432"
     return {
-        "host": getattr(conn, "host", None) or "",
+        "host": extra.get("host") or "",
         "port": port,
         "database": db,
-        "user": getattr(conn, "user", None) or "",
-        "password": getattr(conn, "password", None),
+        "user": extra.get("user") or "",
+        "password": extra.get("password"),
     }
 
 
 def _build_mssql_info(conn: DbtConnection) -> dict[str, Any]:
-    port = str(conn.port) if getattr(conn, "port", None) else "1433"
+    extra = conn.model_extra or {}
+    port = str(extra["port"]) if "port" in extra else "1433"
     return {
-        "host": getattr(conn, "server", None) or getattr(conn, "host", None) or "",
+        "host": extra.get("server") or extra.get("host") or "",
         "port": port,
-        "database": getattr(conn, "database", None) or "",
-        "user": getattr(conn, "user", None) or "",
-        "password": getattr(conn, "password", None),
+        "database": extra.get("database") or "",
+        "user": extra.get("user") or "",
+        "password": extra.get("password"),
         "driver": "ODBC Driver 18 for SQL Server",
         "TDS_Version": "8.0",
         "kwargs": {"TrustServerCertificate": "YES"},
@@ -46,20 +48,22 @@ def _build_mssql_info(conn: DbtConnection) -> dict[str, Any]:
 
 
 def _build_mysql_info(conn: DbtConnection) -> dict[str, Any]:
-    port = str(conn.port) if getattr(conn, "port", None) else "3306"
-    ssl_mode = "DISABLED" if getattr(conn, "ssl_disable", None) else "ENABLED"
+    extra = conn.model_extra or {}
+    port = str(extra["port"]) if "port" in extra else "3306"
+    ssl_mode = "DISABLED" if extra.get("ssl_disable") else "ENABLED"
     return {
-        "host": getattr(conn, "host", None) or "",
+        "host": extra.get("host") or "",
         "port": port,
-        "database": getattr(conn, "database", None) or "",
-        "user": getattr(conn, "user", None) or "",
-        "password": getattr(conn, "password", None),
+        "database": extra.get("database") or "",
+        "user": extra.get("user") or "",
+        "password": extra.get("password"),
         "sslMode": ssl_mode,
     }
 
 
 def _build_duckdb_info(conn: DbtConnection, dbt_home: Path) -> dict[str, Any]:
-    raw_path = getattr(conn, "path", None) or getattr(conn, "file", None) or ""
+    extra = conn.model_extra or {}
+    raw_path = extra.get("path") or extra.get("file") or ""
     if not raw_path:
         raise ValueError("duckdb connection missing 'path' field")
     p = Path(raw_path)
@@ -81,11 +85,12 @@ def _encode_json_bytes(data: bytes) -> str:
 
 
 def _build_bigquery_info(conn: DbtConnection, dbt_home: Path) -> dict[str, Any]:
-    method = (getattr(conn, "method", None) or "").strip().lower()
+    extra = conn.model_extra or {}
+    method = (extra.get("method") or "").strip().lower()
 
     credentials: str
     if method == "service-account-json":
-        raw = getattr(conn, "keyfile_json", None) or ""
+        raw = extra.get("keyfile_json") or ""
         if not raw:
             raise ValueError(
                 "bigquery: method 'service-account-json' requires 'keyfile_json'"
@@ -93,9 +98,9 @@ def _build_bigquery_info(conn: DbtConnection, dbt_home: Path) -> dict[str, Any]:
         credentials = _encode_json_bytes(raw.encode())
 
     elif method in ("service-account", ""):
-        keyfile_path = (getattr(conn, "keyfile", None) or "").strip()
+        keyfile_path = (extra.get("keyfile") or "").strip()
         if not keyfile_path:
-            raw = getattr(conn, "keyfile_json", None) or ""
+            raw = extra.get("keyfile_json") or ""
             if raw:
                 credentials = _encode_json_bytes(raw.encode())
             else:
@@ -123,20 +128,49 @@ def _build_bigquery_info(conn: DbtConnection, dbt_home: Path) -> dict[str, Any]:
 
     return {
         "credentials": credentials,
-        "project_id": getattr(conn, "project", None) or "",
-        "dataset_id": getattr(conn, "dataset", None) or "",
+        "project_id": extra.get("project") or "",
+        "dataset_id": extra.get("dataset") or "",
         "bigquery_type": "dataset",
     }
 
 
 def _build_snowflake_info(conn: DbtConnection) -> dict[str, Any]:
+    extra = conn.model_extra or {}
     return {
-        "user": getattr(conn, "user", None) or "",
-        "password": getattr(conn, "password", None),
-        "account": getattr(conn, "account", None) or "",
-        "database": getattr(conn, "database", None) or "",
-        "schema": getattr(conn, "schema", None) or "",
-        "warehouse": getattr(conn, "warehouse", None),
+        "user": extra.get("user") or "",
+        "password": extra.get("password"),
+        "account": extra.get("account") or "",
+        "database": extra.get("database") or "",
+        "schema": extra.get("schema") or "",
+        "warehouse": extra.get("warehouse"),
+    }
+
+
+def _build_sqlite_info(conn: DbtConnection, dbt_home: Path) -> dict[str, Any]:
+    extra = conn.model_extra or {}
+    schemas_and_paths: dict = extra.get("schemas_and_paths") or {}
+    schema_dir = extra.get("schema_directory") or ""
+    schema = extra.get("schema") or "main"
+
+    # Resolve the primary database path from schemas_and_paths
+    db_path = schemas_and_paths.get(schema, "")
+    if db_path:
+        p = Path(db_path)
+        if not p.is_absolute() and dbt_home:
+            p = dbt_home / p
+        path = str(p)
+    elif schema_dir:
+        sd = Path(schema_dir)
+        if not sd.is_absolute() and dbt_home:
+            sd = dbt_home / sd
+        path = str(sd / f"{schema}.db")
+    else:
+        path = ""
+
+    return {
+        "path": path,
+        "database": extra.get("database") or "database",
+        "schema": schema,
     }
 
 
@@ -160,6 +194,8 @@ def build_connection_info(
         return _build_bigquery_info(conn, dbt_home)
     elif dbt_type == "snowflake":
         return _build_snowflake_info(conn)
+    elif dbt_type == "sqlite":
+        return _build_sqlite_info(conn, dbt_home)
     else:
         raise ValueError(f"Unsupported dbt adapter type: {conn.type!r}")
 

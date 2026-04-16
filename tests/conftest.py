@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 import pytest
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "duckdb"
 
 
 @pytest.fixture

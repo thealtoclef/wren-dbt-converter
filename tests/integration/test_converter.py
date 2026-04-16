@@ -7,7 +7,7 @@ from dbt_mdl import extract_project, format_mdl, ConvertResult
 from dbt_mdl.wren.models import WrenMDLManifest
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "duckdb"
 
 
 def _build(project_path, **kwargs):

@@ -6,7 +6,7 @@ import pytest
 
 from dbt_mdl.cli import main
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "duckdb"
 
 
 @pytest.fixture

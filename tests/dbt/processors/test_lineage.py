@@ -7,7 +7,7 @@ from dbt_mdl.dbt.processors.lineage import (
 )
 
 
-FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "duckdb"
 
 
 class TestTableLineage:

@@ -9,7 +9,7 @@ class DbtConnection(BaseModel):
     """A single dbt target connection.
 
     Only ``type`` is guaranteed across all adapters; everything else is
-    adapter-specific and accessible via ``getattr(conn, field, None)``.
+    adapter-specific and accessible via ``conn.model_extra``.
     """
 
     model_config = ConfigDict(extra="allow")

@@ -344,6 +344,13 @@ def _database_block(project: DbtProjectInfo, gj_db: str | None) -> dict[str, Any
 
     block: dict[str, Any] = {"type": gj_db}
 
+    # SQLite uses `host` for the database file path.
+    if gj_db == "sqlite":
+        path = conn.get("path", "")
+        if path:
+            block["host"] = path
+        return block
+
     schema = _default_schema(project)
     if schema and gj_db == "postgres":
         block["schema"] = schema

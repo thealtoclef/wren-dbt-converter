@@ -1,5 +1,7 @@
 """Tests for GraphJin config generation."""
 
+import json
+import shutil
 from pathlib import Path
 
 import yaml
@@ -8,62 +10,60 @@ from dbt_mdl import extract_project, format_graphjin
 
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+DUCKDB_DIR = FIXTURES_DIR / "duckdb"
+SQLITE_DIR = FIXTURES_DIR / "sqlite"
 
 
-def _make_dbt_project(tmp_path):
-    """Create a minimal dbt project layout."""
-    import shutil
-
+def _make_project(tmp_path, fixture_dir: Path = SQLITE_DIR):
+    """Create a minimal dbt project layout from the given fixture directory."""
     (tmp_path / "target").mkdir()
-    shutil.copy(FIXTURES_DIR / "catalog.json", tmp_path / "target" / "catalog.json")
-    shutil.copy(FIXTURES_DIR / "manifest.json", tmp_path / "target" / "manifest.json")
-    shutil.copy(FIXTURES_DIR / "profiles.yml", tmp_path / "profiles.yml")
+    shutil.copy(fixture_dir / "catalog.json", tmp_path / "target" / "catalog.json")
+    shutil.copy(fixture_dir / "manifest.json", tmp_path / "target" / "manifest.json")
+    shutil.copy(fixture_dir / "profiles.yml", tmp_path / "profiles.yml")
     return tmp_path
 
 
 class TestDevYml:
     def test_is_valid_yaml(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         assert isinstance(yaml.safe_load(gj.dev_yml), dict)
 
-    def test_has_database_block(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+    def test_database_type_matches_adapter(self, tmp_path):
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
-        assert "database" in data
-        assert data["database"]["type"] in (
-            "postgres",
-            "mysql",
-            "mariadb",
-            "sqlite",
-            "oracle",
-            "snowflake",
-            "mssql",
-        )
+        assert data["database"]["type"] == "sqlite"
 
     def test_has_enable_schema(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("enable_schema") is True
 
     def test_has_auth_block(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("auth", {}).get("type") == "none"
 
     def test_default_block_is_false(self, tmp_path):
-        """Without roles, default_block: true would lock out all queries."""
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("default_block") is False
 
+    def test_sqlite_db_path_in_host(self, tmp_path):
+        project = extract_project(_make_project(tmp_path))
+        gj = format_graphjin(project)
+        data = yaml.safe_load(gj.dev_yml)
+        # GraphJin sqlite uses host for the file path
+        assert data["database"]["type"] == "sqlite"
+        assert "host" in data["database"]
+        assert data["database"]["host"].endswith(".db")
+
     def test_tables_only_when_meaningful(self, tmp_path):
-        """We don't emit redundant `name: X / table: X` aliases."""
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         tables = data.get("tables") or []
@@ -71,7 +71,7 @@ class TestDevYml:
             assert "columns" in entry or entry.get("table") != entry.get("name")
 
     def test_relationships_in_tables_columns(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         tables = {t["name"]: t for t in (data.get("tables") or [])}
@@ -84,47 +84,54 @@ class TestDevYml:
             for c in rel_cols
         )
 
+    def test_unsupported_adapter_emits_placeholder(self, tmp_path):
+        """DuckDB is unsupported — database block should still be valid YAML."""
+        project = extract_project(_make_project(tmp_path, DUCKDB_DIR))
+        gj = format_graphjin(project)
+        data = yaml.safe_load(gj.dev_yml)
+        assert data["database"]["type"] == "postgres"
+        assert data["database"]["dbname"] == "replace_me"
+
 
 class TestDbGraphQL:
     def test_has_dbinfo_header(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         first_line = gj.db_graphql.splitlines()[0]
         assert first_line.startswith("# dbinfo:")
+        assert "sqlite" in first_line
 
     def test_has_types(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         assert "type customers" in gj.db_graphql
         assert "type orders" in gj.db_graphql
 
     def test_has_relation_directive(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         assert "@relation(type: customers, field: customer_id)" in gj.db_graphql
 
     def test_required_fields_have_bang(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         assert "Integer!" in gj.db_graphql or "BigInt!" in gj.db_graphql
 
     def test_all_models_present(self, tmp_path):
-        project = extract_project(_make_dbt_project(tmp_path))
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         for model in project.models:
             assert f"type {model.name}" in gj.db_graphql
 
     def test_non_public_schema_directive(self, tmp_path):
-        """Fixture uses duckdb 'main' schema — should emit @schema(name: main)."""
-        project = extract_project(_make_dbt_project(tmp_path))
+        """SQLite fixture uses 'main' schema — should emit @schema(name: main)."""
+        project = extract_project(_make_project(tmp_path))
         gj = format_graphjin(project)
         if any(m.schema_ and m.schema_ != "public" for m in project.models):
             assert "@schema(name:" in gj.db_graphql
 
     def test_exclude_patterns(self, tmp_path):
-        project = extract_project(
-            _make_dbt_project(tmp_path), exclude_patterns=[r"^stg_"]
-        )
+        project = extract_project(_make_project(tmp_path), exclude_patterns=[r"^stg_"])
         gj = format_graphjin(project)
         assert "type stg_orders" not in gj.db_graphql
         assert "type customers" in gj.db_graphql
@@ -174,8 +181,7 @@ class TestTypeMapping:
         assert _parse_sql_type("TEXT[]") == ("text", "", True)
         assert _parse_sql_type("ARRAY<STRING>") == ("string", "", True)
 
-    def test_array_renders_as_list(self, tmp_path):
-        """Confirm [Type] GraphQL list syntax when a column is an array."""
+    def test_array_renders_as_list(self):
         from dbt_mdl.graphjin.formatter import _column_line
         from dbt_mdl.domain.models import ColumnInfo, ModelInfo
 
@@ -187,10 +193,7 @@ class TestTypeMapping:
 
 class TestNoRelationships:
     def test_no_relationships_still_works(self, tmp_path):
-        import json
-        import shutil
-
-        data = json.loads((FIXTURES_DIR / "manifest.json").read_text())
+        data = json.loads((SQLITE_DIR / "manifest.json").read_text())
         keys_to_remove = [
             k for k in data["nodes"] if k.startswith("test.") and "relationships" in k
         ]
@@ -202,9 +205,9 @@ class TestNoRelationships:
         (project_dir / "target").mkdir()
         (project_dir / "target" / "manifest.json").write_text(json.dumps(data))
         shutil.copy(
-            FIXTURES_DIR / "catalog.json", project_dir / "target" / "catalog.json"
+            SQLITE_DIR / "catalog.json", project_dir / "target" / "catalog.json"
         )
-        shutil.copy(FIXTURES_DIR / "profiles.yml", project_dir / "profiles.yml")
+        shutil.copy(SQLITE_DIR / "profiles.yml", project_dir / "profiles.yml")
 
         project = extract_project(project_dir)
         assert len(project.relationships) == 0
