@@ -1075,7 +1075,7 @@ wheels = [
 ]
 
 [[package]]
-name = "wren-dbt-converter"
+name = "dbt-mdl"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

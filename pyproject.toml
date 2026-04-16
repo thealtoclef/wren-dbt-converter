@@ -1,7 +1,7 @@
 [project]
-name = "wren-dbt-converter"
+name = "dbt-mdl"
 version = "0.1.0"
-description = "Convert dbt projects to Wren MDL and WrenEngine instances"
+description = "Convert dbt project to Modeling Definition Language"
 readme = "README.md"
 requires-python = ">=3.14,<4"
 license = "MIT"
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-wren-dbt-converter = "wren_dbt_converter.cli:main"
+dbt-mdl = "dbt_mdl.cli:main"
 
 [dependency-groups]
 test = ["pytest>=9.0.3", "pytest-cov>=7.1.0"]
@@ -37,11 +37,11 @@ disable-timestamp = true
 
 [tool.datamodel-codegen.profiles.mdl]
 input = "jsonschema/mdl.schema.json"
-output = "src/wren_dbt_converter/models/_mdl.py"
+output = "src/dbt_mdl/models/_mdl.py"
 
 [tool.datamodel-codegen.profiles.lineage]
 input = "jsonschema/lineage.schema.json"
-output = "src/wren_dbt_converter/models/lineage.py"
+output = "src/dbt_mdl/models/lineage.py"
 
 [tool.pytest]
 testpaths = ["tests"]

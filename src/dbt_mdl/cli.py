@@ -10,7 +10,7 @@ from . import build_manifest
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="wren-dbt-converter",
+        prog="dbt-mdl",
         description="Convert a dbt project to Wren MDL and connection info JSON files.",
     )
     parser.add_argument(
