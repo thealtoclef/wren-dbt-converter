@@ -378,9 +378,9 @@ class WrenmdlManifestSchema(BaseModel):
         validate_by_name=True,
     )
     field_schema: Literal[
-        "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json"
+        "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/mdl.schema.json"
     ] = Field(
-        "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json",
+        "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/mdl.schema.json",
         alias="$schema",
         description="the schema of WrenMDL",
     )

@@ -82,7 +82,9 @@ def main(argv: list[str] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     mdl_path = output_dir / "mdl.json"
-    mdl_path.write_text(result.manifest.model_dump_json(by_alias=True, indent=2))
+    mdl_path.write_text(
+        result.manifest.model_dump_json(by_alias=True, exclude_none=True, indent=2)
+    )
 
     connection_path = output_dir / "connection.json"
     connection_path.write_text(

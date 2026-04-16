@@ -3,6 +3,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field, constr
 from enum import StrEnum
+from typing import Literal
 
 
 class TableLineageItem(BaseModel):
@@ -65,6 +66,13 @@ class LineageSchema(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         validate_by_name=True,
+    )
+    field_schema: Literal[
+        "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/lineage.schema.json"
+    ] = Field(
+        "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/lineage.schema.json",
+        alias="$schema",
+        description="the schema of lineage",
     )
     catalog: str = Field(..., description="Catalog name.")
     schema_: str = Field(..., alias="schema", description="Schema name.")

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://wrenai.ai/schemas/lineage.schema.json",
+  "$id": "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/lineage.schema.json",
   "title": "Lineage Schema",
   "description": "Schema for lineage.json — a standalone lineage document that captures table-level and column-level data lineage.",
 
@@ -9,6 +9,11 @@
   "additionalProperties": false,
 
   "properties": {
+    "$schema": {
+      "description": "the schema of lineage",
+      "type": "string",
+      "const": "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/lineage.schema.json"
+    },
     "catalog": {
       "description": "Catalog name.",
       "type": "string"

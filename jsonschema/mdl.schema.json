@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json",
+  "$id": "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/mdl.schema.json",
   "title": "WrenMDL Manifest Schema",
   "description": "A schema for WrenMDL manifest file",
   "$defs": {
@@ -127,7 +127,7 @@
     "$schema": {
       "description": "the schema of WrenMDL",
       "type": "string",
-      "const": "https://raw.githubusercontent.com/Canner/WrenAI/main/wren-mdl/mdl.schema.json"
+      "const": "https://raw.githubusercontent.com/thealtoclef/dbt-mdl/main/jsonschema/mdl.schema.json"
     },
     "catalog": {
       "description": "the catalog name of WrenMDL",
