@@ -12,6 +12,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..models.lineage import (
+    Column,
+    ColumnLineageItem,
+    LineageSchema,
+    LineageType,
+    TableLineageItem,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,11 +127,62 @@ def extract_column_lineage(
 
 def build_lineage(
     manifest: Any,
+    catalog: Any,
+    data_source: str,
     manifest_path: Path,
     catalog_path: Path,
-) -> LineageResult:
-    """Extract both table-level and column-level lineage."""
-    return LineageResult(
-        table_lineage=extract_table_lineage(manifest),
-        column_lineage=extract_column_lineage(manifest_path, catalog_path),
+) -> LineageSchema:
+    """Build lineage from dbt artifacts.
+
+    Returns a LineageSchema that can be serialized to lineage.json.
+    """
+    table_result = extract_table_lineage(manifest)
+    column_result = extract_column_lineage(manifest_path, catalog_path)
+
+    # Get catalog/schema from first model node
+    catalog_name = ""
+    schema_name = ""
+    if hasattr(catalog, "nodes") and catalog.nodes:
+        first_node = next(iter(catalog.nodes.values()), None)
+        if first_node and hasattr(first_node, "metadata"):
+            node_meta = first_node.metadata
+            catalog_name = getattr(node_meta, "database", "") or ""
+            schema_name = getattr(node_meta, "schema_", "") or ""
+
+    # Build table lineage
+    table_lineage: list[TableLineageItem] = []
+    for target, sources in table_result.items():
+        for source in sources:
+            table_lineage.append(TableLineageItem(source=source, target=target))
+
+    # Build column lineage - group by (source, target)
+    grouped: dict[tuple[str, str], list[Column]] = {}
+    for target, col_map in column_result.items():
+        for col_name, edges in col_map.items():
+            for edge in edges:
+                key = (edge.source_model, target)
+                cols = grouped.setdefault(key, [])
+                try:
+                    lt = LineageType(edge.lineage_type)
+                except ValueError:
+                    lt = LineageType.unknown
+                cols.append(
+                    Column(
+                        source_column=edge.source_column,
+                        target_column=edge.target_column,
+                        lineage_type=lt,
+                    )
+                )
+
+    column_lineage: list[ColumnLineageItem] = [
+        ColumnLineageItem(source=s, target=t, columns=c)
+        for (s, t), c in grouped.items()
+    ]
+
+    return LineageSchema(
+        catalog=catalog_name,
+        schema=schema_name,
+        data_source=data_source,
+        table_lineage=table_lineage,
+        column_lineage=column_lineage,
     )

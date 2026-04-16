@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 from . import build_manifest
-from .models.wrapper import manifest_to_dict
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -83,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     mdl_path = output_dir / "mdl.json"
-    mdl_path.write_text(json.dumps(manifest_to_dict(result.manifest), indent=2))
+    mdl_path.write_text(result.manifest.model_dump_json(by_alias=True, indent=2))
 
     connection_path = output_dir / "connection.json"
     connection_path.write_text(
@@ -96,9 +95,11 @@ def main(argv: list[str] | None = None) -> None:
         )
     )
 
-    schema_description_path = output_dir / "schema_description.md"
-    schema_description_path.write_text(result.schema_description)
+    # Save lineage.json if lineage is available
+    if result.lineage is not None:
+        lineage_path = output_dir / "lineage.json"
+        lineage_path.write_text(result.lineage.model_dump_json(by_alias=True, indent=2))
+        print(f"lineage.json          → {lineage_path}")
 
-    print(f"mdl.json                → {mdl_path}")
-    print(f"connection.json         → {connection_path}")
-    print(f"schema_description.md   → {schema_description_path}")
+    print(f"mdl.json              → {mdl_path}")
+    print(f"connection.json       → {connection_path}")

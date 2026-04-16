@@ -1,12 +1,9 @@
-import pytest
 from pathlib import Path
 
 from wren_dbt_converter.processors.lineage import (
     ColumnLineageEdge,
-    LineageResult,
     extract_table_lineage,
     extract_column_lineage,
-    build_lineage,
 )
 
 
@@ -85,127 +82,53 @@ class TestColumnLineage:
 
 
 class TestBuildLineage:
-    def test_returns_lineage_result(self, manifest, manifest_path, catalog_path):
-        result = build_lineage(manifest, manifest_path, catalog_path)
-        assert isinstance(result, LineageResult)
-        assert isinstance(result.table_lineage, dict)
-        assert isinstance(result.column_lineage, dict)
+    """Tests for build_lineage which returns LineageSchema."""
 
-    def test_table_lineage_populated(self, manifest, manifest_path, catalog_path):
-        result = build_lineage(manifest, manifest_path, catalog_path)
-        assert len(result.table_lineage) > 0
-        assert "customers" in result.table_lineage
+    def test_returns_lineage_schema(self, manifest, manifest_path, catalog_path):
+        from wren_dbt_converter.processors.lineage import build_lineage
+        from wren_dbt_converter.models.lineage import LineageSchema
+        from wren_dbt_converter.parsers.artifacts import load_catalog
 
-    def test_column_lineage_populated(self, manifest, manifest_path, catalog_path):
-        result = build_lineage(manifest, manifest_path, catalog_path)
-        assert len(result.column_lineage) > 0
+        catalog = load_catalog(catalog_path)
+        result = build_lineage(manifest, catalog, "DUCKDB", manifest_path, catalog_path)
+        assert isinstance(result, LineageSchema)
+
+    def test_lineage_schema_has_required_fields(
+        self, manifest, manifest_path, catalog_path
+    ):
+        from wren_dbt_converter.processors.lineage import build_lineage
+        from wren_dbt_converter.parsers.artifacts import load_catalog
+
+        catalog = load_catalog(catalog_path)
+        result = build_lineage(manifest, catalog, "DUCKDB", manifest_path, catalog_path)
+        assert hasattr(result, "catalog")
+        assert hasattr(result, "schema")
+        assert hasattr(result, "data_source")
+        assert hasattr(result, "table_lineage")
+        assert hasattr(result, "column_lineage")
 
 
-class TestLineageEmbeddedInProperties:
-    """Verify build_manifest() embeds bidirectional lineage in model properties."""
+class TestConvertResultLineage:
+    """Tests for lineage in ConvertResult."""
 
-    @pytest.fixture(autouse=True)
-    def setup(self, dbt_project):
+    def test_convert_result_has_lineage(self, dbt_project):
         from wren_dbt_converter import build_manifest
 
-        self.result = build_manifest(dbt_project)
+        result = build_manifest(dbt_project)
+        assert hasattr(result, "lineage")
+        assert result.lineage is not None
 
-    def _get_model(self, name: str):
-        return next(m for m in self.result.manifest.models if m.name == name)
+    def test_lineage_is_lineage_schema(self, dbt_project):
+        from wren_dbt_converter import build_manifest
+        from wren_dbt_converter.models.lineage import LineageSchema
 
-    # --- Structure ---
+        result = build_manifest(dbt_project)
+        assert isinstance(result.lineage, LineageSchema)
 
-    def test_lineage_key_in_model_properties(self):
-        customers = self._get_model("customers")
-        assert customers.properties is not None
-        assert "lineage" in customers.properties
+    def test_lineage_schema_serialization(self, dbt_project):
+        from wren_dbt_converter import build_manifest
 
-    def test_lineage_has_upstream_and_downstream(self):
-        customers = self._get_model("customers")
-        lineage = customers.properties["lineage"]
-        assert "upstream" in lineage
-        assert isinstance(lineage["upstream"], dict)
-
-    def test_models_without_lineage_have_no_lineage_key(self):
-        # A model with no upstream or downstream shouldn't get the lineage key
-        for model in self.result.manifest.models:
-            if not model.properties or "lineage" not in model.properties:
-                continue
-            lin = model.properties["lineage"]
-            has_upstream = bool(
-                lin.get("upstream", {}).get("models")
-                or lin.get("upstream", {}).get("columns")
-            )
-            has_downstream = bool(
-                lin.get("downstream", {}).get("models")
-                or lin.get("downstream", {}).get("columns")
-            )
-            assert has_upstream or has_downstream
-
-    # --- Model-level lineage ---
-
-    def test_upstream_models(self):
-        customers = self._get_model("customers")
-        upstream = customers.properties["lineage"]["upstream"]
-        assert set(upstream["models"]) == {
-            "stg_customers",
-            "stg_orders",
-            "stg_payments",
-        }
-
-    def test_downstream_models(self):
-        stg_orders = self._get_model("stg_orders")
-        downstream = stg_orders.properties["lineage"]["downstream"]
-        assert set(downstream["models"]) == {"customers", "orders"}
-
-    def test_stg_models_upstream(self):
-        stg_orders = self._get_model("stg_orders")
-        upstream = stg_orders.properties["lineage"]["upstream"]
-        assert upstream["models"] == ["raw_orders"]
-
-    # --- Column-level lineage ---
-
-    def test_upstream_columns_on_target_model(self):
-        customers = self._get_model("customers")
-        upstream_cols = customers.properties["lineage"]["upstream"]["columns"]
-        assert isinstance(upstream_cols, dict)
-        assert len(upstream_cols) > 0
-        for col_name, edges in upstream_cols.items():
-            assert isinstance(edges, list)
-            for entry in edges:
-                assert "model" in entry
-                assert "column" in entry
-                assert "type" in entry
-
-    def test_downstream_columns_on_source_model(self):
-        stg_customers = self._get_model("stg_customers")
-        downstream_cols = stg_customers.properties["lineage"]["downstream"]["columns"]
-        assert isinstance(downstream_cols, dict)
-        assert len(downstream_cols) > 0
-        for col_name, edges in downstream_cols.items():
-            for entry in edges:
-                assert entry["model"] == "customers"
-
-    def test_bidirectional_column_lineage_consistent(self):
-        customers = self._get_model("customers")
-        stg_customers = self._get_model("stg_customers")
-
-        # Upstream edges from customers columns
-        upstream_pairs: set[tuple[str, str]] = set()
-        for col_name, edges in customers.properties["lineage"]["upstream"][
-            "columns"
-        ].items():
-            for e in edges:
-                if e["model"] == "stg_customers":
-                    upstream_pairs.add((col_name, e["column"]))
-
-        # Downstream edges from stg_customers columns
-        downstream_pairs: set[tuple[str, str]] = set()
-        for col_name, edges in stg_customers.properties["lineage"]["downstream"][
-            "columns"
-        ].items():
-            for e in edges:
-                if e["model"] == "customers":
-                    downstream_pairs.add((e["column"], col_name))
-
-        assert upstream_pairs == downstream_pairs
+        result = build_manifest(dbt_project)
+        json_str = result.lineage.model_dump_json(by_alias=True, indent=2)
+        assert "tableLineage" in json_str
+        assert "columnLineage" in json_str

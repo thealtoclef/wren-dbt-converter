@@ -69,9 +69,10 @@ def test_build_manifest_has_enum(dbt_project):
 
 
 def test_manifest_str_is_base64_json(dbt_project):
+    result = build_manifest(dbt_project)
+    # manifest_str should be base64 encoded JSON
     import base64
 
-    result = build_manifest(dbt_project)
     raw = base64.b64decode(result.manifest_str)
     data = json.loads(raw)
     assert "models" in data
@@ -107,11 +108,10 @@ def test_not_null_propagated(dbt_project):
     assert by_name["customer_id"].not_null is True
 
 
-def test_schema_description_is_populated(dbt_project):
+def test_schema_description_is_empty(dbt_project):
     result = build_manifest(dbt_project)
     assert isinstance(result.schema_description, str)
-    assert len(result.schema_description) > 0
-    assert "customers" in result.schema_description
+    assert result.schema_description == ""
 
 
 def test_model_description_in_properties(dbt_project):
