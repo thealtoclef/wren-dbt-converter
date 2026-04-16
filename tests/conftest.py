@@ -27,21 +27,21 @@ def profiles_path(fixtures_dir) -> Path:
 
 @pytest.fixture
 def catalog(catalog_path):
-    from wren_dbt_converter.parsers.artifacts import load_catalog
+    from dbt_mdl.dbt.artifacts import load_catalog
 
     return load_catalog(catalog_path)
 
 
 @pytest.fixture
 def manifest(manifest_path):
-    from wren_dbt_converter.parsers.artifacts import load_manifest
+    from dbt_mdl.dbt.artifacts import load_manifest
 
     return load_manifest(manifest_path)
 
 
 @pytest.fixture
 def profiles(profiles_path):
-    from wren_dbt_converter.parsers.profiles_parser import analyze_dbt_profiles
+    from dbt_mdl.dbt.profiles_parser import analyze_dbt_profiles
 
     return analyze_dbt_profiles(profiles_path)
 
@@ -53,5 +53,4 @@ def dbt_project(tmp_path):
     shutil.copy(FIXTURES_DIR / "catalog.json", tmp_path / "target" / "catalog.json")
     shutil.copy(FIXTURES_DIR / "manifest.json", tmp_path / "target" / "manifest.json")
     shutil.copy(FIXTURES_DIR / "profiles.yml", tmp_path / "profiles.yml")
-    shutil.copy(FIXTURES_DIR / "dbt_project.yml", tmp_path / "dbt_project.yml")
     return tmp_path

@@ -5,13 +5,15 @@ import json
 import sys
 from pathlib import Path
 
-from . import build_manifest
+from .graphjin.formatter import format_graphjin
+from .wren.formatter import format_mdl
+from .pipeline import extract_project
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="dbt-mdl",
-        description="Convert a dbt project to Wren MDL and connection info JSON files.",
+        description="Convert a dbt project to model definition formats (MDL, GraphJin).",
     )
     parser.add_argument(
         "project_path",
@@ -24,6 +26,13 @@ def main(argv: list[str] | None = None) -> None:
         default=Path("."),
         metavar="DIR",
         help="Output directory for generated files (default: current directory).",
+    )
+    parser.add_argument(
+        "--format",
+        dest="fmt",
+        choices=["mdl", "graphjin", "all"],
+        default="mdl",
+        help="Output format: 'mdl' (default), 'graphjin', or 'all'.",
     )
     parser.add_argument(
         "--catalog",
@@ -66,7 +75,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        result = build_manifest(
+        project = extract_project(
             project_path=args.project_path,
             profile_name=args.profile_name,
             target=args.target,
@@ -81,27 +90,52 @@ def main(argv: list[str] | None = None) -> None:
     output_dir: Path = args.output
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    mdl_path = output_dir / "mdl.json"
-    mdl_path.write_text(
-        result.manifest.model_dump_json(by_alias=True, exclude_none=True, indent=2)
-    )
+    fmt = args.fmt
 
-    connection_path = output_dir / "connection.json"
-    connection_path.write_text(
-        json.dumps(
-            {
-                "dataSource": str(result.data_source),
-                "connection": result.connection_info,
-            },
-            indent=2,
+    # --- Domain format ---
+    if fmt in ("domain", "all"):
+        lineage = project.build_lineage_schema()
+        if lineage.table_lineage or lineage.column_lineage:
+            lineage_path = output_dir / "lineage.json"
+            lineage_path.write_text(lineage.model_dump_json(by_alias=True, indent=2))
+            print(f"lineage.json          -> {lineage_path}")
+
+    # --- Wren format ---
+    if fmt in ("wren", "all"):
+        result = format_mdl(project)
+
+        mdl_path = output_dir / "mdl.json"
+        mdl_path.write_text(
+            result.manifest.model_dump_json(by_alias=True, exclude_none=True, indent=2)
         )
-    )
+        print(f"mdl.json              -> {mdl_path}")
 
-    # Save lineage.json if lineage is available
-    if result.lineage is not None:
-        lineage_path = output_dir / "lineage.json"
-        lineage_path.write_text(result.lineage.model_dump_json(by_alias=True, indent=2))
-        print(f"lineage.json          → {lineage_path}")
+        connection_path = output_dir / "connection.json"
+        connection_path.write_text(
+            json.dumps(
+                {
+                    "dataSource": result.data_source.value
+                    if result.data_source
+                    else "",
+                    "connection": result.connection_info,
+                },
+                indent=2,
+            )
+        )
+        print(f"connection.json       -> {connection_path}")
 
-    print(f"mdl.json              → {mdl_path}")
-    print(f"connection.json       → {connection_path}")
+    # --- GraphJin format ---
+    if fmt in ("graphjin", "all"):
+        gj = format_graphjin(project)
+
+        dev_yml_path = output_dir / "dev.yml"
+        dev_yml_path.write_text(gj.dev_yml)
+        print(f"dev.yml               -> {dev_yml_path}")
+
+        db_graphql_path = output_dir / "db.graphql"
+        db_graphql_path.write_text(gj.db_graphql)
+        print(f"db.graphql            -> {db_graphql_path}")
+
+        prod_yml_path = output_dir / "prod.yml"
+        prod_yml_path.write_text(gj.prod_yml)
+        print(f"prod.yml              -> {prod_yml_path}")
