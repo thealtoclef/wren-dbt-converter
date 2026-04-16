@@ -1,17 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
 from .models import DbtConnection, DbtProfile, DbtProfiles
-
-
-def find_profiles_file(project_path: Path | str) -> Optional[Path]:
-    """Return profiles.yml from the project root, or None if not found."""
-    candidate = Path(project_path) / "profiles.yml"
-    return candidate if candidate.exists() else None
 
 
 def analyze_dbt_profiles(path: Path | str) -> DbtProfiles:

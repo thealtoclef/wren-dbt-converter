@@ -10,9 +10,9 @@ from dbt_mdl.wren.models import WrenMDLManifest
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "duckdb"
 
 
-def _build(project_path, **kwargs):
-    """Helper: extract + format as MDL (equivalent to old build_manifest)."""
-    project = extract_project(project_path, **kwargs)
+def _build(dbt_project, **kwargs):
+    """Helper: extract + format as MDL."""
+    project = extract_project(**dbt_project, **kwargs)
     return format_mdl(project)
 
 
@@ -86,18 +86,29 @@ def test_manifest_str_is_base64_json(dbt_project):
 
 
 def test_missing_catalog(tmp_path):
-    (tmp_path / "target").mkdir()
-    shutil.copy(FIXTURES_DIR / "profiles.yml", tmp_path / "profiles.yml")
+    profiles = tmp_path / "profiles.yml"
+    manifest = tmp_path / "manifest.json"
+    shutil.copy(FIXTURES_DIR / "profiles.yml", profiles)
+    shutil.copy(FIXTURES_DIR / "manifest.json", manifest)
     with pytest.raises(FileNotFoundError, match="catalog.json"):
-        extract_project(tmp_path)
+        extract_project(
+            profiles_path=profiles,
+            catalog_path=tmp_path / "catalog.json",
+            manifest_path=manifest,
+        )
 
 
 def test_missing_profiles(tmp_path):
-    (tmp_path / "target").mkdir()
-    shutil.copy(FIXTURES_DIR / "catalog.json", tmp_path / "target" / "catalog.json")
-    shutil.copy(FIXTURES_DIR / "manifest.json", tmp_path / "target" / "manifest.json")
+    catalog = tmp_path / "catalog.json"
+    manifest = tmp_path / "manifest.json"
+    shutil.copy(FIXTURES_DIR / "catalog.json", catalog)
+    shutil.copy(FIXTURES_DIR / "manifest.json", manifest)
     with pytest.raises(FileNotFoundError, match="profiles.yml"):
-        extract_project(tmp_path)
+        extract_project(
+            profiles_path=tmp_path / "profiles.yml",
+            catalog_path=catalog,
+            manifest_path=manifest,
+        )
 
 
 def test_not_null_propagated(dbt_project):

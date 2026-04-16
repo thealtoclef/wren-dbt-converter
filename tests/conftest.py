@@ -53,4 +53,8 @@ def dbt_project(tmp_path):
     shutil.copy(FIXTURES_DIR / "catalog.json", tmp_path / "target" / "catalog.json")
     shutil.copy(FIXTURES_DIR / "manifest.json", tmp_path / "target" / "manifest.json")
     shutil.copy(FIXTURES_DIR / "profiles.yml", tmp_path / "profiles.yml")
-    return tmp_path
+    return {
+        "profiles_path": tmp_path / "profiles.yml",
+        "catalog_path": tmp_path / "target" / "catalog.json",
+        "manifest_path": tmp_path / "target" / "manifest.json",
+    }

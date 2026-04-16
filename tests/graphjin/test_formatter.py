@@ -1,7 +1,6 @@
 """Tests for GraphJin config generation."""
 
 import json
-import shutil
 from pathlib import Path
 
 import yaml
@@ -9,52 +8,51 @@ import yaml
 from dbt_mdl import extract_project, format_graphjin
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
-DUCKDB_DIR = FIXTURES_DIR / "duckdb"
-SQLITE_DIR = FIXTURES_DIR / "sqlite"
+SQLITE_DIR = Path(__file__).parent.parent / "fixtures" / "sqlite"
+DUCKDB_DIR = Path(__file__).parent.parent / "fixtures" / "duckdb"
 
 
-def _make_project(tmp_path, fixture_dir: Path = SQLITE_DIR):
-    """Create a minimal dbt project layout from the given fixture directory."""
-    (tmp_path / "target").mkdir()
-    shutil.copy(fixture_dir / "catalog.json", tmp_path / "target" / "catalog.json")
-    shutil.copy(fixture_dir / "manifest.json", tmp_path / "target" / "manifest.json")
-    shutil.copy(fixture_dir / "profiles.yml", tmp_path / "profiles.yml")
-    return tmp_path
+def _make_project(fixture_dir: Path = SQLITE_DIR):
+    """Return explicit paths for extract_project."""
+    return {
+        "profiles_path": fixture_dir / "profiles.yml",
+        "catalog_path": fixture_dir / "catalog.json",
+        "manifest_path": fixture_dir / "manifest.json",
+    }
 
 
 class TestDevYml:
-    def test_is_valid_yaml(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_is_valid_yaml(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         assert isinstance(yaml.safe_load(gj.dev_yml), dict)
 
-    def test_database_type_matches_adapter(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_database_type_matches_adapter(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data["database"]["type"] == "sqlite"
 
-    def test_has_enable_schema(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_has_enable_schema(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("enable_schema") is True
 
-    def test_has_auth_block(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_has_auth_block(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("auth", {}).get("type") == "none"
 
-    def test_default_block_is_false(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_default_block_is_false(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         assert data.get("default_block") is False
 
-    def test_sqlite_db_path_in_host(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_sqlite_db_path_in_host(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         # GraphJin sqlite uses host for the file path
@@ -62,16 +60,16 @@ class TestDevYml:
         assert "host" in data["database"]
         assert data["database"]["host"].endswith(".db")
 
-    def test_tables_only_when_meaningful(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_tables_only_when_meaningful(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         tables = data.get("tables") or []
         for entry in tables:
             assert "columns" in entry or entry.get("table") != entry.get("name")
 
-    def test_relationships_in_tables_columns(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_relationships_in_tables_columns(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         data = yaml.safe_load(gj.dev_yml)
         tables = {t["name"]: t for t in (data.get("tables") or [])}
@@ -84,54 +82,54 @@ class TestDevYml:
             for c in rel_cols
         )
 
-    def test_unsupported_adapter_emits_placeholder(self, tmp_path):
-        """DuckDB is unsupported — database block should still be valid YAML."""
-        project = extract_project(_make_project(tmp_path, DUCKDB_DIR))
-        gj = format_graphjin(project)
-        data = yaml.safe_load(gj.dev_yml)
-        assert data["database"]["type"] == "postgres"
-        assert data["database"]["dbname"] == "replace_me"
+    def test_unsupported_adapter_raises(self):
+        """DuckDB is unsupported — should raise ValueError."""
+        import pytest
+
+        project = extract_project(**_make_project(DUCKDB_DIR))
+        with pytest.raises(ValueError, match="does not support.*duckdb"):
+            format_graphjin(project)
 
 
 class TestDbGraphQL:
-    def test_has_dbinfo_header(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_has_dbinfo_header(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         first_line = gj.db_graphql.splitlines()[0]
         assert first_line.startswith("# dbinfo:")
         assert "sqlite" in first_line
 
-    def test_has_types(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_has_types(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         assert "type customers" in gj.db_graphql
         assert "type orders" in gj.db_graphql
 
-    def test_has_relation_directive(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_has_relation_directive(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         assert "@relation(type: customers, field: customer_id)" in gj.db_graphql
 
-    def test_required_fields_have_bang(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_required_fields_have_bang(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         assert "Integer!" in gj.db_graphql or "BigInt!" in gj.db_graphql
 
-    def test_all_models_present(self, tmp_path):
-        project = extract_project(_make_project(tmp_path))
+    def test_all_models_present(self):
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         for model in project.models:
             assert f"type {model.name}" in gj.db_graphql
 
-    def test_non_public_schema_directive(self, tmp_path):
+    def test_non_public_schema_directive(self):
         """SQLite fixture uses 'main' schema — should emit @schema(name: main)."""
-        project = extract_project(_make_project(tmp_path))
+        project = extract_project(**_make_project())
         gj = format_graphjin(project)
         if any(m.schema_ and m.schema_ != "public" for m in project.models):
             assert "@schema(name:" in gj.db_graphql
 
-    def test_exclude_patterns(self, tmp_path):
-        project = extract_project(_make_project(tmp_path), exclude_patterns=[r"^stg_"])
+    def test_exclude_patterns(self):
+        project = extract_project(**_make_project(), exclude_patterns=[r"^stg_"])
         gj = format_graphjin(project)
         assert "type stg_orders" not in gj.db_graphql
         assert "type customers" in gj.db_graphql
@@ -200,16 +198,14 @@ class TestNoRelationships:
         for k in keys_to_remove:
             del data["nodes"][k]
 
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / "target").mkdir()
-        (project_dir / "target" / "manifest.json").write_text(json.dumps(data))
-        shutil.copy(
-            SQLITE_DIR / "catalog.json", project_dir / "target" / "catalog.json"
-        )
-        shutil.copy(SQLITE_DIR / "profiles.yml", project_dir / "profiles.yml")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps(data))
 
-        project = extract_project(project_dir)
+        project = extract_project(
+            profiles_path=SQLITE_DIR / "profiles.yml",
+            catalog_path=SQLITE_DIR / "catalog.json",
+            manifest_path=manifest_path,
+        )
         assert len(project.relationships) == 0
 
         gj = format_graphjin(project)

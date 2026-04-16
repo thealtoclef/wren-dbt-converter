@@ -87,7 +87,7 @@ class TestConvertResultLineage:
     def test_convert_result_has_lineage(self, dbt_project):
         from dbt_mdl import extract_project
 
-        project = extract_project(dbt_project)
+        project = extract_project(**dbt_project)
         lineage = project.build_lineage_schema()
         assert lineage is not None
 
@@ -95,14 +95,14 @@ class TestConvertResultLineage:
         from dbt_mdl import extract_project
         from dbt_mdl.domain.models import LineageSchema
 
-        project = extract_project(dbt_project)
+        project = extract_project(**dbt_project)
         lineage = project.build_lineage_schema()
         assert isinstance(lineage, LineageSchema)
 
     def test_lineage_schema_serialization(self, dbt_project):
         from dbt_mdl import extract_project
 
-        project = extract_project(dbt_project)
+        project = extract_project(**dbt_project)
         lineage = project.build_lineage_schema()
         json_str = lineage.model_dump_json(by_alias=True, indent=2)
         assert "tableLineage" in json_str

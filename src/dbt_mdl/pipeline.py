@@ -21,70 +21,67 @@ from .dbt.processors.tests_preprocessor import preprocess_tests
 
 
 def extract_project(
-    project_path: str | Path,
+    profiles_path: str | Path,
+    catalog_path: str | Path,
+    manifest_path: str | Path,
     profile_name: Optional[str] = None,
     target: Optional[str] = None,
     exclude_patterns: Optional[list[str]] = None,
-    catalog_path: Optional[Path] = None,
-    manifest_path: Optional[Path] = None,
 ) -> DbtProjectInfo:
     """Extract domain-neutral project information from a dbt project.
 
     Args:
-        project_path: Path to the dbt project root.
+        profiles_path: Path to profiles.yml.
+        catalog_path: Path to catalog.json.
+        manifest_path: Path to manifest.json.
         profile_name: Profile name to use. Defaults to the first profile found.
         target: Target name within the profile. Defaults to the profile's default target.
         exclude_patterns: Regex patterns matched against model names; matching models excluded.
-        catalog_path: Path to catalog.json. Defaults to <project_path>/target/catalog.json.
-        manifest_path: Path to manifest.json. Defaults to <project_path>/target/manifest.json.
 
     Returns:
         DbtProjectInfo with models, relationships, enums, lineage, and connection info.
     """
-    project_path = Path(project_path)
+    profiles_path = Path(profiles_path)
+    catalog_path = Path(catalog_path)
+    manifest_path = Path(manifest_path)
 
     # 1. Load catalog
-    resolved_catalog = catalog_path or (project_path / "target" / "catalog.json")
-    if not resolved_catalog.exists():
+    if not catalog_path.exists():
         raise FileNotFoundError(
-            f"catalog.json not found at {resolved_catalog}. Run 'dbt docs generate' first."
+            f"catalog.json not found at {catalog_path}. Run 'dbt docs generate' first."
         )
-    catalog = load_catalog(resolved_catalog)
+    catalog = load_catalog(catalog_path)
 
-    # 3. Load manifest
-    resolved_manifest = manifest_path or (project_path / "target" / "manifest.json")
-    if not resolved_manifest.exists():
+    # 2. Load manifest
+    if not manifest_path.exists():
         raise FileNotFoundError(
-            f"manifest.json not found at {resolved_manifest}. "
+            f"manifest.json not found at {manifest_path}. "
             "Run 'dbt compile' or 'dbt run' first."
         )
-    manifest = load_manifest(resolved_manifest)
+    manifest = load_manifest(manifest_path)
 
-    # 4. Find and parse profiles
-    from .dbt.profiles_parser import analyze_dbt_profiles, find_profiles_file
+    # 3. Parse profiles
+    if not profiles_path.exists():
+        raise FileNotFoundError(f"profiles.yml not found at {profiles_path}")
 
-    profiles_path = find_profiles_file(project_path)
-    if profiles_path is None:
-        raise FileNotFoundError(
-            f"profiles.yml not found in project directory: {project_path}"
-        )
+    from .dbt.profiles_parser import analyze_dbt_profiles
+
     profiles = analyze_dbt_profiles(profiles_path)
 
-    # 5. Get active connection
+    # 4. Get active connection
     data_source, connection_info = get_active_connection(
         profiles,
         profile_name=profile_name,
         target=target,
-        dbt_home=project_path,
     )
 
-    # 6. Preprocess tests (enums, not-null)
+    # 5. Preprocess tests (enums, not-null)
     tests_result = preprocess_tests(manifest)
 
-    # 7. Extract constraints (PK/FK from dbt v1.5+)
+    # 6. Extract constraints (PK/FK from dbt v1.5+)
     constraints_result = extract_constraints(manifest)
 
-    # 8. Build models from catalog nodes
+    # 7. Build models from catalog nodes
     models: list[ModelInfo] = []
     for key, catalog_node in catalog.nodes.items():
         if not key.startswith("model."):
@@ -170,7 +167,7 @@ def extract_project(
             )
         )
 
-    # 9. Build relationships (merge: constraints > tests)
+    # 8. Build relationships (merge: constraints > tests)
     test_relationships = build_relationships(manifest)
     seen_names: set[str] = set()
     relationships: list[RelationshipInfo] = []
@@ -182,7 +179,7 @@ def extract_project(
         if rel.name not in seen_names:
             relationships.append(_wren_rel_to_domain(rel))
 
-    # 10. Attach relationships to models
+    # 9. Attach relationships to models
     model_by_name: dict[str, ModelInfo] = {m.name: m for m in models}
     for rel in relationships:
         from_model = model_by_name.get(rel.from_model)
@@ -192,7 +189,7 @@ def extract_project(
         if to_model:
             to_model.relationships.append(rel)
 
-    # 11. Extract lineage
+    # 10. Extract lineage
     table_lineage = extract_table_lineage(manifest)
 
     # Column lineage (via dbt-colibri)
@@ -200,7 +197,7 @@ def extract_project(
     try:
         from .dbt.processors.lineage import extract_column_lineage
 
-        col_result = extract_column_lineage(resolved_manifest, resolved_catalog)
+        col_result = extract_column_lineage(manifest_path, catalog_path)
         for model_name, col_map in col_result.items():
             column_lineage[model_name] = {}
             for col_name, edges in col_map.items():
@@ -216,7 +213,7 @@ def extract_project(
     except Exception:
         pass  # dbt-colibri not available
 
-    # 12. Build enums dict
+    # 11. Build enums dict
     enums: dict[str, list[str]] = {}
     for enum_def in tests_result.enum_definitions:
         enums[enum_def.name] = [v.name for v in enum_def.values]
@@ -234,13 +231,9 @@ def extract_project(
 
 def _wren_rel_to_domain(rel: Any) -> RelationshipInfo:
     """Convert a Wren Relationship object to domain RelationshipInfo."""
-    # Parse the condition string to extract from/to column info
-    # Condition format: "model1"."col1" = "model2"."col2"
     from_col = ""
     to_col = ""
     if hasattr(rel, "condition") and rel.condition:
-        import re
-
         match = re.match(r'"(\w+)"\."(\w+)"\s*=\s*"(\w+)"\."(\w+)"', rel.condition)
         if match:
             from_col = match.group(2)

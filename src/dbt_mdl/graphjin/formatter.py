@@ -23,12 +23,9 @@ from ..domain.models import ColumnInfo, DbtProjectInfo, ModelInfo, RelationshipI
 
 # ---------------------------------------------------------------------------
 # dbt adapter → GraphJin database type.
-#
-# None = unsupported by GraphJin. We still emit a config.yml with a clear
-# header comment so users notice rather than silently getting a broken config.
 # ---------------------------------------------------------------------------
 
-_DB_TYPE_MAP: dict[str, str | None] = {
+_DB_TYPE_MAP: dict[str, str] = {
     "postgres": "postgres",
     "postgresql": "postgres",
     "mysql": "mysql",
@@ -38,15 +35,11 @@ _DB_TYPE_MAP: dict[str, str | None] = {
     "snowflake": "snowflake",
     "mssql": "mssql",
     "sqlserver": "mssql",
-    # Not supported natively by GraphJin:
-    "bigquery": None,
-    "duckdb": None,
-    "redshift": None,
 }
 
 
 def _map_db_type(data_source: str) -> str | None:
-    return _DB_TYPE_MAP.get(data_source.lower(), None)
+    return _DB_TYPE_MAP.get(data_source.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +61,13 @@ class GraphJinResult(BaseModel):
 
 def format_graphjin(project: DbtProjectInfo) -> GraphJinResult:
     """Convert domain-neutral DbtProjectInfo into GraphJin config files."""
+    gj_db = _map_db_type(project.data_source)
+    if gj_db is None:
+        supported = sorted(_DB_TYPE_MAP)
+        raise ValueError(
+            f"GraphJin does not support `{project.data_source}`. "
+            f"Supported adapters: {', '.join(supported)}"
+        )
     return GraphJinResult(
         db_graphql=_build_db_graphql(project),
         dev_yml=_build_dev_yml(project),
@@ -198,7 +198,7 @@ def _sql_to_gql_type(raw: str) -> tuple[str, str]:
 
 def _build_db_graphql(project: DbtProjectInfo) -> str:
     """Build the GraphJin SDL schema file."""
-    gj_db = _map_db_type(project.data_source) or "postgres"
+    gj_db = _map_db_type(project.data_source)
     schema_name = _default_schema(project)
     header = f"# dbinfo:{gj_db},,{schema_name}\n"
 
@@ -295,15 +295,10 @@ def _build_dev_yml(project: DbtProjectInfo) -> str:
     Named `dev.yml` so GraphJin loads it by default (GO_ENV unset → dev).
     """
     gj_db = _map_db_type(project.data_source)
+
     header_lines: list[str] = [
         "# GraphJin configuration generated from a dbt project.",
     ]
-    if gj_db is None:
-        header_lines.append(
-            f"# WARNING: dbt adapter `{project.data_source}` is not supported by "
-            "GraphJin. This config is a scaffold only; the database block will "
-            "need manual edits before it can connect."
-        )
 
     config: dict[str, Any] = {
         "app_name": "dbt GraphJin API",
@@ -325,22 +320,8 @@ def _build_dev_yml(project: DbtProjectInfo) -> str:
     return "\n".join(header_lines) + "\n\n" + yml
 
 
-def _database_block(project: DbtProjectInfo, gj_db: str | None) -> dict[str, Any]:
+def _database_block(project: DbtProjectInfo, gj_db: str) -> dict[str, Any]:
     conn = project.connection_info or {}
-
-    # Unsupported adapter: emit a placeholder with a clearly-wrong type so the
-    # user edits it. Don't leak dbt-only fields like `url`/`format`.
-    if gj_db is None:
-        # Unsupported adapter — emit a plain postgres placeholder; the file
-        # header warns the user this needs manual editing.
-        return {
-            "type": "postgres",
-            "host": "localhost",
-            "port": 5432,
-            "dbname": "replace_me",
-            "user": "postgres",
-            "password": "",
-        }
 
     block: dict[str, Any] = {"type": gj_db}
 

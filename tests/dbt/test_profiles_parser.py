@@ -1,7 +1,4 @@
-from dbt_mdl.dbt.profiles_parser import (
-    analyze_dbt_profiles,
-    find_profiles_file,
-)
+from dbt_mdl.dbt.profiles_parser import analyze_dbt_profiles
 from dbt_mdl.dbt.models import DbtProfiles
 
 
@@ -77,17 +74,6 @@ my_project:
     profiles = analyze_dbt_profiles(path)
     assert "config" not in profiles.profiles
     assert "my_project" in profiles.profiles
-
-
-def test_find_profiles_file_in_project(tmp_path):
-    (tmp_path / "profiles.yml").write_text("test: {target: dev, outputs: {}}")
-    found = find_profiles_file(tmp_path)
-    assert found == tmp_path / "profiles.yml"
-
-
-def test_find_profiles_file_missing(tmp_path):
-    found = find_profiles_file(tmp_path)
-    assert found is None
 
 
 def test_port_as_string_coerced(tmp_path):

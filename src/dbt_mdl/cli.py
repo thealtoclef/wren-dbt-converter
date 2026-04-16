@@ -13,12 +13,33 @@ from .pipeline import extract_project
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="dbt-mdl",
-        description="Convert a dbt project to model definition formats.",
+        description="Convert dbt artifacts to model definition formats.",
     )
     parser.add_argument(
-        "project_path",
+        "format",
+        choices=["wren", "graphjin", "all"],
+        help="Output format.",
+    )
+    parser.add_argument(
+        "--profiles",
         type=Path,
-        help="Path to the dbt project root (must contain profiles.yml).",
+        required=True,
+        metavar="PATH",
+        help="Path to profiles.yml.",
+    )
+    parser.add_argument(
+        "--catalog",
+        type=Path,
+        required=True,
+        metavar="PATH",
+        help="Path to catalog.json.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        metavar="PATH",
+        help="Path to manifest.json.",
     )
     parser.add_argument(
         "--output",
@@ -26,27 +47,6 @@ def main(argv: list[str] | None = None) -> None:
         default=Path("."),
         metavar="DIR",
         help="Output directory for generated files (default: current directory).",
-    )
-    parser.add_argument(
-        "--format",
-        dest="fmt",
-        choices=["wren", "graphjin", "all"],
-        default="all",
-        help="Output format (default: all).",
-    )
-    parser.add_argument(
-        "--catalog",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="Path to catalog.json (default: <project_path>/target/catalog.json).",
-    )
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="Path to manifest.json (default: <project_path>/target/manifest.json).",
     )
     parser.add_argument(
         "--profile-name",
@@ -76,12 +76,12 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         project = extract_project(
-            project_path=args.project_path,
+            profiles_path=args.profiles,
+            catalog_path=args.catalog,
+            manifest_path=args.manifest,
             profile_name=args.profile_name,
             target=args.target,
             exclude_patterns=args.exclude,
-            catalog_path=args.catalog,
-            manifest_path=args.manifest,
         )
     except (FileNotFoundError, ValueError, KeyError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -90,48 +90,47 @@ def main(argv: list[str] | None = None) -> None:
     output_dir: Path = args.output
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fmt = args.fmt
+    try:
+        if args.format in ("wren", "all"):
+            _write_wren(project, output_dir)
+        if args.format in ("graphjin", "all"):
+            _write_graphjin(project, output_dir)
+    except (ValueError, KeyError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
-    # --- Domain format ---
-    if fmt in ("domain", "all"):
-        lineage = project.build_lineage_schema()
-        if lineage.table_lineage or lineage.column_lineage:
-            lineage_path = output_dir / "lineage.json"
-            lineage_path.write_text(lineage.model_dump_json(by_alias=True, indent=2))
-            print(f"lineage.json          -> {lineage_path}")
 
-    # --- Wren format ---
-    if fmt in ("wren", "all"):
-        result = format_mdl(project)
+def _write_wren(project, output_dir: Path) -> None:
+    result = format_mdl(project)
 
-        mdl_path = output_dir / "mdl.json"
-        mdl_path.write_text(
-            result.manifest.model_dump_json(by_alias=True, exclude_none=True, indent=2)
+    mdl_path = output_dir / "mdl.json"
+    mdl_path.write_text(
+        result.manifest.model_dump_json(by_alias=True, exclude_none=True, indent=2)
+    )
+    print(f"mdl.json              -> {mdl_path}")
+
+    connection_path = output_dir / "connection.json"
+    connection_path.write_text(
+        json.dumps(
+            {
+                "dataSource": result.data_source.value
+                if result.data_source
+                else "",
+                "connection": result.connection_info,
+            },
+            indent=2,
         )
-        print(f"mdl.json              -> {mdl_path}")
+    )
+    print(f"connection.json       -> {connection_path}")
 
-        connection_path = output_dir / "connection.json"
-        connection_path.write_text(
-            json.dumps(
-                {
-                    "dataSource": result.data_source.value
-                    if result.data_source
-                    else "",
-                    "connection": result.connection_info,
-                },
-                indent=2,
-            )
-        )
-        print(f"connection.json       -> {connection_path}")
 
-    # --- GraphJin format ---
-    if fmt in ("graphjin", "all"):
-        gj = format_graphjin(project)
+def _write_graphjin(project, output_dir: Path) -> None:
+    gj = format_graphjin(project)
 
-        db_graphql_path = output_dir / "db.graphql"
-        db_graphql_path.write_text(gj.db_graphql)
-        print(f"db.graphql            -> {db_graphql_path}")
+    db_graphql_path = output_dir / "db.graphql"
+    db_graphql_path.write_text(gj.db_graphql)
+    print(f"db.graphql            -> {db_graphql_path}")
 
-        dev_yml_path = output_dir / "dev.yml"
-        dev_yml_path.write_text(gj.dev_yml)
-        print(f"dev.yml               -> {dev_yml_path}")
+    dev_yml_path = output_dir / "dev.yml"
+    dev_yml_path.write_text(gj.dev_yml)
+    print(f"dev.yml               -> {dev_yml_path}")
