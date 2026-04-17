@@ -61,11 +61,12 @@ class GraphJinResult(BaseModel):
 
 def format_graphjin(project: DbtProjectInfo) -> GraphJinResult:
     """Convert domain-neutral DbtProjectInfo into GraphJin config files."""
-    gj_db = _map_db_type(project.data_source)
+    conn_type = project.connection.type
+    gj_db = _map_db_type(conn_type)
     if gj_db is None:
         supported = sorted(_DB_TYPE_MAP)
         raise ValueError(
-            f"GraphJin does not support `{project.data_source}`. "
+            f"GraphJin does not support `{conn_type}`. "
             f"Supported adapters: {', '.join(supported)}"
         )
     return GraphJinResult(
@@ -197,8 +198,14 @@ def _sql_to_gql_type(raw: str) -> tuple[str, str]:
 
 
 def _build_db_graphql(project: DbtProjectInfo) -> str:
-    """Build the GraphJin SDL schema file."""
-    gj_db = _map_db_type(project.data_source)
+    """Build the GraphJin SDL schema (db.graphql).
+
+    Generates a complete SDL schema for all dbt models with their types,
+    columns, and @database/@schema/@table directives. This is the primary schema
+    that GraphJin uses for query compilation.
+    """
+    conn_type = project.connection.type
+    gj_db = _map_db_type(conn_type)
     schema_name = _default_schema(project)
     header = f"# dbinfo:{gj_db},,{schema_name}\n"
 
@@ -233,11 +240,12 @@ def _type_block(
     rel_map: dict[tuple[str, str], tuple[str, str]],
     project: DbtProjectInfo,
 ) -> str:
-    type_directives: list[str] = []
-    if model.catalog:
-        type_directives.append(f"@database(name: {model.catalog})")
-    if model.schema_ and model.schema_ != "public":
-        type_directives.append(f"@schema(name: {model.schema_})")
+    """Build a GraphJin SDL type block for a dbt model."""
+    type_directives: list[str] = [
+        f"@database(name: {model.database})",
+        f"@schema(name: {model.schema_})",
+        f"@table(name: {model.relation_name})",
+    ]
 
     header = f"type {model.name}"
     if type_directives:
@@ -294,7 +302,8 @@ def _build_dev_yml(project: DbtProjectInfo) -> str:
 
     Named `dev.yml` so GraphJin loads it by default (GO_ENV unset → dev).
     """
-    gj_db = _map_db_type(project.data_source)
+    conn_type = project.connection.type
+    gj_db = _map_db_type(conn_type)
 
     header_lines: list[str] = [
         "# GraphJin configuration generated from a dbt project.",
@@ -312,24 +321,27 @@ def _build_dev_yml(project: DbtProjectInfo) -> str:
         "auth": {"type": "none"},
     }
 
-    tables = _tables_block(project)
-    if tables:
-        config["tables"] = tables
-
     yml = yaml.safe_dump(config, sort_keys=False, width=100)
     return "\n".join(header_lines) + "\n\n" + yml
 
 
 def _database_block(project: DbtProjectInfo, gj_db: str) -> dict[str, Any]:
-    conn = project.connection_info or {}
+    conn = project.connection
+    extra = conn.model_extra if conn else {}
 
     block: dict[str, Any] = {"type": gj_db}
 
     # SQLite uses `host` for the database file path.
     if gj_db == "sqlite":
-        path = conn.get("path", "")
+        schemas_and_paths = extra.get("schemas_and_paths") or {}
+        schema_dir = extra.get("schema_directory") or ""
+        schema_name = extra.get("schema") or "main"
+
+        path = schemas_and_paths.get(schema_name, "")
         if path:
             block["host"] = path
+        elif schema_dir:
+            block["host"] = f"{schema_dir}/{schema_name}.db"
         return block
 
     schema = _default_schema(project)
@@ -343,41 +355,8 @@ def _database_block(project: DbtProjectInfo, gj_db: str) -> dict[str, Any]:
         ("user", "user"),
         ("password", "password"),
     ]:
-        if src_key in conn and conn[src_key] not in (None, ""):
-            block[dst_key] = conn[src_key]
+        val = extra.get(src_key)
+        if val is not None and val != "":
+            block[dst_key] = val
 
     return block
-
-
-def _tables_block(project: DbtProjectInfo) -> list[dict[str, Any]]:
-    """Emit `tables:` entries only when there is meaningful per-table config.
-
-    Skips redundant `name: X / table: X` aliases with no custom columns —
-    GraphJin's schema introspection handles trivial cases already.
-    """
-    entries: list[dict[str, Any]] = []
-    for model in project.models:
-        columns_cfg: list[dict[str, Any]] = []
-        for rel in model.relationships:
-            if rel.from_model != model.name:
-                continue
-            if not rel.from_column or not rel.to_column:
-                continue
-            columns_cfg.append(
-                {
-                    "name": rel.from_column,
-                    "related_to": f"{rel.to_model}.{rel.to_column}",
-                }
-            )
-
-        needs_alias = model.table_name and model.table_name != model.name
-        if not columns_cfg and not needs_alias:
-            continue
-
-        entry: dict[str, Any] = {"name": model.name}
-        if needs_alias:
-            entry["table"] = model.table_name
-        if columns_cfg:
-            entry["columns"] = columns_cfg
-        entries.append(entry)
-    return entries

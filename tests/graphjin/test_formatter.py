@@ -69,18 +69,15 @@ class TestDevYml:
             assert "columns" in entry or entry.get("table") != entry.get("name")
 
     def test_relationships_in_tables_columns(self):
+        """Relationships are specified via @relation directive in db.graphql schema."""
         project = extract_project(**_make_project())
         gj = format_graphjin(project)
+        # Verify tables block is empty - all relationship info is in schema
         data = yaml.safe_load(gj.dev_yml)
-        tables = {t["name"]: t for t in (data.get("tables") or [])}
-        orders = tables.get("orders")
-        assert orders is not None
-        rel_cols = orders.get("columns") or []
-        assert any(
-            c["name"] == "customer_id"
-            and c.get("related_to", "").startswith("customers.")
-            for c in rel_cols
-        )
+        tables = data.get("tables") or []
+        assert tables == [], "tables should be empty - relations in schema"
+        # Verify @relation directive is in schema
+        assert "@relation(type: customers, field: customer_id)" in gj.db_graphql
 
     def test_unsupported_adapter_raises(self):
         """DuckDB is unsupported — should raise ValueError."""
@@ -183,7 +180,7 @@ class TestTypeMapping:
         from dbt_mdl.graphjin.formatter import _column_line
         from dbt_mdl.domain.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", table_name="t", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
         c = ColumnInfo(name="tags", type="TEXT[]", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "[Text]" in line

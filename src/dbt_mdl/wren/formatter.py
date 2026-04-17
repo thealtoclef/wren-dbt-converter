@@ -45,7 +45,8 @@ class ConvertResult(BaseModel):
 
 def format_mdl(project: DbtProjectInfo) -> ConvertResult:
     """Convert domain-neutral DbtProjectInfo into Wren MDL format."""
-    data_source = _parse_data_source(project.data_source)
+    conn_type = project.connection.type
+    data_source = _parse_data_source(conn_type)
 
     # Map models
     wren_models: list[WrenModel] = []
@@ -58,9 +59,9 @@ def format_mdl(project: DbtProjectInfo) -> ConvertResult:
             if col:
                 wren_columns.append(col)
 
-        table_ref_kwargs: dict[str, Any] = {"table": model.table_name}
-        if model.catalog:
-            table_ref_kwargs["catalog"] = model.catalog
+        table_ref_kwargs: dict[str, Any] = {"table": model.relation_name}
+        if model.database:
+            table_ref_kwargs["catalog"] = model.database
         if model.schema_:
             table_ref_kwargs["schema"] = model.schema_
 
@@ -92,13 +93,13 @@ def format_mdl(project: DbtProjectInfo) -> ConvertResult:
     mdl_schema = ""
     if project.models:
         first = project.models[0]
-        mdl_catalog = first.catalog or ""
+        mdl_catalog = first.database or ""
         mdl_schema = first.schema_ or ""
 
     wren_manifest = WrenMDLManifest(
         catalog=mdl_catalog,
         schema_=mdl_schema,
-        data_source=project.data_source,
+        data_source=conn_type,
         models=wren_models,
         relationships=wren_relationships,
         enum_definitions=enum_definitions if enum_definitions else None,
@@ -107,7 +108,6 @@ def format_mdl(project: DbtProjectInfo) -> ConvertResult:
     return ConvertResult(
         manifest=wren_manifest,
         data_source=data_source,
-        connection_info=project.connection_info,
     )
 
 

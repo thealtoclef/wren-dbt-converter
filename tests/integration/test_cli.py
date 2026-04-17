@@ -11,9 +11,12 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "duckdb"
 def _cli_base_args(dbt_project):
     return [
         "wren",
-        "--profiles", str(dbt_project["profiles_path"]),
-        "--catalog", str(dbt_project["catalog_path"]),
-        "--manifest", str(dbt_project["manifest_path"]),
+        "--profiles",
+        str(dbt_project["profiles_path"]),
+        "--catalog",
+        str(dbt_project["catalog_path"]),
+        "--manifest",
+        str(dbt_project["manifest_path"]),
     ]
 
 
@@ -104,10 +107,14 @@ def test_cli_graphjin_unsupported_adapter(dbt_project, tmp_path):
         main(
             [
                 "graphjin",
-                "--profiles", str(dbt_project["profiles_path"]),
-                "--catalog", str(dbt_project["catalog_path"]),
-                "--manifest", str(dbt_project["manifest_path"]),
-                "--output", str(output_dir),
+                "--profiles",
+                str(dbt_project["profiles_path"]),
+                "--catalog",
+                str(dbt_project["catalog_path"]),
+                "--manifest",
+                str(dbt_project["manifest_path"]),
+                "--output",
+                str(output_dir),
             ]
         )
 

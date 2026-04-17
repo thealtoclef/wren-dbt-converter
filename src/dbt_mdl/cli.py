@@ -89,12 +89,17 @@ def main(argv: list[str] | None = None) -> None:
     output_dir: Path = args.output
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    profiles_path = args.profiles
+
     try:
         requested = {f.strip() for f in args.format.split(",")}
         valid = {"domain", "wren", "graphjin", "all"}
         unknown = requested - valid
         if unknown:
-            print(f"Error: unknown format(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+            print(
+                f"Error: unknown format(s): {', '.join(sorted(unknown))}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         formats = valid - {"all"} if "all" in requested else requested
@@ -102,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
         if "domain" in formats:
             _write_domain(project, output_dir)
         if "wren" in formats:
-            _write_wren(project, output_dir)
+            _write_wren(project, profiles_path, output_dir)
         if "graphjin" in formats:
             _write_graphjin(project, output_dir)
     except (ValueError, KeyError) as exc:
@@ -118,7 +123,16 @@ def _write_domain(project, output_dir: Path) -> None:
         print(f"lineage.json          -> {lineage_path}")
 
 
-def _write_wren(project, output_dir: Path) -> None:
+def _write_wren(project, profiles_path: Path, output_dir: Path) -> None:
+    from .wren.connection import build_connection_info
+
+    dbt_home = profiles_path.parent
+    try:
+        connection_info = build_connection_info(project.connection, dbt_home)
+    except ValueError as exc:
+        print(f"Warning: {exc}", file=sys.stderr)
+        connection_info = {"incomplete": True}
+
     result = format_mdl(project)
 
     mdl_path = output_dir / "mdl.json"
@@ -131,10 +145,8 @@ def _write_wren(project, output_dir: Path) -> None:
     connection_path.write_text(
         json.dumps(
             {
-                "dataSource": result.data_source.value
-                if result.data_source
-                else "",
-                "connection": result.connection_info,
+                "dataSource": result.data_source.value if result.data_source else "",
+                "connection": connection_info,
             },
             indent=2,
         )

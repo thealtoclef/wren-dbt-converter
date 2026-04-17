@@ -69,7 +69,7 @@ def extract_project(
     profiles = analyze_dbt_profiles(profiles_path)
 
     # 4. Get active connection
-    data_source, connection_info = get_active_connection(
+    connection = get_active_connection(
         profiles,
         profile_name=profile_name,
         target=target,
@@ -97,7 +97,7 @@ def extract_project(
 
         # Build columns
         catalog_columns: dict = catalog_node.columns or {}
-        manifest_columns: dict = getattr(manifest_node, "columns", None) or {}
+        manifest_columns: dict = getattr(manifest_node, "columns", {})
 
         pk_col = constraints_result.primary_keys.get(key)
 
@@ -116,10 +116,7 @@ def extract_project(
                         enum_values = [v.name for v in enum_def.values]
                         break
 
-            description = ""
-            manifest_col = manifest_columns.get(col_name)
-            if manifest_col:
-                description = getattr(manifest_col, "description", "") or ""
+            description = getattr(manifest_columns.get(col_name), "description", "")
 
             columns.append(
                 ColumnInfo(
@@ -142,25 +139,30 @@ def extract_project(
 
         columns.sort(key=sort_key)
 
-        # Schema and catalog from metadata
-        schema = (
-            catalog_node.metadata.schema_
-            if hasattr(catalog_node.metadata, "schema_")
-            else getattr(catalog_node.metadata, "schema", None)
-        )
-        db = catalog_node.metadata.database
+        # Schema and database from metadata
+        database = catalog_node.metadata.database
+        schema = catalog_node.metadata.schema_
+        # Fall back to connection database if not set in catalog
+        if database is None:
+            conn_extra = connection.model_extra
+            database = (
+                conn_extra.get("database")
+                or conn_extra.get("project")
+                or conn_extra.get("dbname")
+                or conn_extra.get("service_name")
+                or conn_extra.get("sid")
+            )
 
-        # Description from manifest
-        description = ""
-        if manifest_node:
-            description = getattr(manifest_node, "description", "") or ""
+        # Get alias and description from manifest node
+        model_alias = getattr(manifest_node, "alias", None)
+        description = getattr(manifest_node, "description", "")
 
         models.append(
             ModelInfo(
                 name=model_name,
-                table_name=model_name,
-                catalog=db or None,
-                schema=schema or None,
+                alias=model_alias,
+                database=database,
+                schema_=schema,
                 columns=columns,
                 primary_key=pk_col,
                 description=description,
@@ -224,8 +226,7 @@ def extract_project(
         enums=enums,
         table_lineage=table_lineage,
         column_lineage=column_lineage,
-        data_source=data_source,
-        connection_info=connection_info,
+        connection=connection,
     )
 
 

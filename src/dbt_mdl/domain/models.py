@@ -8,9 +8,10 @@ consume them to produce format-specific output.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, constr
+
+from ..dbt.models import DbtConnection
 
 
 # ---------------------------------------------------------------------------
@@ -46,15 +47,20 @@ class ModelInfo(BaseModel):
     """A dbt model (maps to a physical table in the database)."""
 
     name: str  # dbt model name
-    table_name: str  # actual DB table name (usually same as model name)
-    catalog: str | None = None
-    schema_: str | None = Field(None, alias="schema")
+    alias: str | None = None  # warehouse entity name (defaults to name if not set)
+    database: str | None = None
+    schema_: str = Field(alias="schema")
     columns: list[ColumnInfo] = Field(default_factory=list)
     primary_key: str | None = None
     description: str = ""
     relationships: list[RelationshipInfo] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
+
+    @property
+    def relation_name(self) -> str:
+        """Warehouse entity name: alias if set, else name."""
+        return self.alias if self.alias else self.name
 
 
 class DbtProjectInfo(BaseModel):
@@ -70,8 +76,7 @@ class DbtProjectInfo(BaseModel):
     column_lineage: dict[str, dict[str, list[dict[str, str]]]] = Field(
         default_factory=dict
     )
-    data_source: str = ""  # e.g. "postgres", "duckdb", "bigquery"
-    connection_info: dict[str, Any] = Field(default_factory=dict)
+    connection: DbtConnection
 
     def build_lineage_schema(self) -> LineageSchema:
         """Build a LineageSchema from the raw lineage data in this project."""
@@ -104,16 +109,15 @@ class DbtProjectInfo(BaseModel):
             for (s, t), c in grouped.items()
         ]
 
-        catalog_name = ""
-        schema_name = ""
-        if self.models:
-            catalog_name = self.models[0].catalog or ""
-            schema_name = self.models[0].schema_ or ""
+        if not self.models:
+            raise ValueError("Cannot build lineage schema: no models in project")
+
+        first_model = self.models[0]
 
         return LineageSchema(
-            catalog=catalog_name,
-            schema=schema_name,
-            data_source=self.data_source,
+            database=first_model.database,
+            schema=first_model.schema_,
+            data_source=self.connection.type,
             table_lineage=table_lineage_items if table_lineage_items else [],
             column_lineage=column_lineage_items if column_lineage_items else [],
         )
@@ -187,7 +191,7 @@ class LineageSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True)
 
-    catalog: str = Field(..., description="Catalog name.")
+    database: str | None = Field(default=None, description="Database name.")
     schema_: str = Field(..., alias="schema", description="Schema name.")
     data_source: str = Field(
         ...,
