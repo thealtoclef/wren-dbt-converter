@@ -59,11 +59,11 @@ def format_mdl(project: DbtProjectInfo) -> ConvertResult:
             if col:
                 wren_columns.append(col)
 
-        table_ref_kwargs: dict[str, Any] = {"table": model.relation_name}
-        if model.database:
-            table_ref_kwargs["catalog"] = model.database
-        if model.schema_:
-            table_ref_kwargs["schema"] = model.schema_
+        table_ref_kwargs: dict[str, str] = {
+            "catalog": model.database,
+            "schema": model.schema_,
+            "table": model.relation_name,
+        }
 
         props: dict[str, str] = {}
         if model.description:

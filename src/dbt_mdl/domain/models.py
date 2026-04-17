@@ -48,7 +48,7 @@ class ModelInfo(BaseModel):
 
     name: str  # dbt model name
     alias: str | None = None  # warehouse entity name (defaults to name if not set)
-    database: str | None = None
+    database: str
     schema_: str = Field(alias="schema")
     columns: list[ColumnInfo] = Field(default_factory=list)
     primary_key: str | None = None

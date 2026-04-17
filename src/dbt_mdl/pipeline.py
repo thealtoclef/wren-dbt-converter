@@ -139,19 +139,21 @@ def extract_project(
 
         columns.sort(key=sort_key)
 
-        # Schema and database from metadata
-        database = catalog_node.metadata.database
-        schema = catalog_node.metadata.schema_
-        # Fall back to connection database if not set in catalog
+        # Get database and schema
+        database = catalog_node.metadata.database or next(
+            (
+                connection.model_extra.get(k)
+                for k in ("database", "project", "dbname", "service_name", "sid")
+                if connection.model_extra.get(k)
+            ),
+            None,
+        )
         if database is None:
-            conn_extra = connection.model_extra
-            database = (
-                conn_extra.get("database")
-                or conn_extra.get("project")
-                or conn_extra.get("dbname")
-                or conn_extra.get("service_name")
-                or conn_extra.get("sid")
+            raise ValueError(
+                f"database is required for model {model_name} but could not be "
+                f"determined from catalog or connection"
             )
+        schema = catalog_node.metadata.schema_
 
         # Get alias and description from manifest node
         model_alias = getattr(manifest_node, "alias", None)
