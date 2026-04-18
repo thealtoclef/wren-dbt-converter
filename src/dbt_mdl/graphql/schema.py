@@ -7,7 +7,6 @@ consumed by the SQL compiler and resolvers.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,13 +36,14 @@ class RelationDef:
 @dataclass
 class ColumnDef:
     name: str
-    gql_type: str  # e.g. "Integer", "Text", "Unknown"
+    gql_type: str  # PascalCase GraphQL-compatible type name
     is_array: bool = False
     not_null: bool = False
     is_pk: bool = False
     is_unique: bool = False
     is_hidden: bool = False
-    size_args: str = ""
+    sql_type: str = ""  # raw SQL type from @sql directive
+    sql_size: str = ""  # size/precision from @sql directive
     relation: RelationDef | None = None
 
 
@@ -58,8 +58,6 @@ class TableDef:
 
 @dataclass
 class SchemaInfo:
-    db_type: str = ""
-    default_schema: str = ""
     tables: list[TableDef] = field(default_factory=list)
 
 
@@ -83,22 +81,6 @@ class TableRegistry:
 
     def __len__(self) -> int:
         return len(self._map)
-
-
-# ---------------------------------------------------------------------------
-# Header parsing
-# ---------------------------------------------------------------------------
-
-_DBINFO_RE = re.compile(r"^#\s*dbinfo:\s*([^,]*),([^,]*),(.+)$")
-
-
-def _parse_header(sdl: str) -> tuple[str, str]:
-    """Extract (db_type, default_schema) from the ``# dbinfo:`` comment."""
-    for line in sdl.splitlines():
-        m = _DBINFO_RE.match(line)
-        if m:
-            return m.group(1).strip(), m.group(3).strip()
-    return "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +138,10 @@ def _parse_column(field_node: FieldDefinitionNode) -> ColumnDef:
             col.is_unique = True
         elif dname == "blocked":
             col.is_hidden = True
-        elif dname == "type":
+        elif dname == "sql":
             args = _directive_args(directive)
-            col.size_args = args.get("args", "")
+            col.sql_type = args.get("type", "")
+            col.sql_size = args.get("size", "")
         elif dname == "relation":
             args = _directive_args(directive)
             col.relation = RelationDef(
@@ -176,7 +159,6 @@ def _parse_column(field_node: FieldDefinitionNode) -> ColumnDef:
 
 def parse_db_graphql(sdl: str) -> tuple[SchemaInfo, TableRegistry]:
     """Parse a ``db.graphql`` SDL string into ``SchemaInfo`` + ``TableRegistry``."""
-    db_type, default_schema = _parse_header(sdl)
     doc: DocumentNode = parse(sdl)
 
     tables: list[TableDef] = []
@@ -204,11 +186,7 @@ def parse_db_graphql(sdl: str) -> tuple[SchemaInfo, TableRegistry]:
 
         tables.append(table)
 
-    info = SchemaInfo(
-        db_type=db_type,
-        default_schema=default_schema,
-        tables=tables,
-    )
+    info = SchemaInfo(tables=tables)
     return info, TableRegistry(tables)
 
 

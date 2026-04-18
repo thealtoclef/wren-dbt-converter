@@ -4,42 +4,30 @@ from dbt_mdl.graphql.schema import parse_db_graphql
 
 
 SDL = """\
-# dbinfo:sqlite,,main
-
 type customers @database(name: mydb) @schema(name: main) @table(name: customers) {
-  customer_id: Integer! @unique
-  first_name: Text
-  last_name: Text
+  customer_id: Integer! @sql(type: "INTEGER") @unique
+  first_name: Varchar @sql(type: "VARCHAR")
+  last_name: Varchar @sql(type: "VARCHAR")
 }
 
 type orders @database(name: mydb) @schema(name: main) @table(name: orders) {
-  order_id: Integer! @id
-  customer_id: Integer! @relation(type: customers, field: customer_id)
-  order_date: Text
-  status: Text
-  tags: [Text]
-  amount: Varchar @type(args: "255")
+  order_id: Integer! @sql(type: "INTEGER") @id
+  customer_id: Integer! @sql(type: "INTEGER") @relation(type: customers, field: customer_id)
+  order_date: Date @sql(type: "DATE")
+  status: Varchar @sql(type: "VARCHAR")
+  tags: [Text] @sql(type: "TEXT[]")
+  amount: Varchar @sql(type: "VARCHAR", size: "255")
 }
 
 type payments @database(name: mydb) @schema(name: main) @table(name: payments) {
-  payment_id: Integer!
-  secret: Text @blocked
+  payment_id: Integer! @sql(type: "INTEGER")
+  secret: Text @sql(type: "TEXT") @blocked
 }
 """
 
 
 def _parse():
     return parse_db_graphql(SDL)
-
-
-class TestHeaderParsing:
-    def test_db_type(self):
-        info, _ = _parse()
-        assert info.db_type == "sqlite"
-
-    def test_default_schema(self):
-        info, _ = _parse()
-        assert info.default_schema == "main"
 
 
 class TestTableParsing:
@@ -89,10 +77,11 @@ class TestColumnParsing:
         assert col.is_array is True
         assert col.gql_type == "Text"
 
-    def test_size_args(self):
+    def test_sql_type_directive(self):
         info, _ = _parse()
         col = next(c for c in info.tables[1].columns if c.name == "amount")
-        assert col.size_args == "255"
+        assert col.sql_type == "VARCHAR"
+        assert col.sql_size == "255"
 
 
 class TestDirectives:
