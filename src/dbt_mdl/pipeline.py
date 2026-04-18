@@ -52,7 +52,8 @@ def extract_project(
         )
     manifest = load_manifest(manifest_path)
 
-    # 3. Get adapter type from manifest metadata
+    # 3. Get project name and adapter type from manifest metadata
+    project_name: str = getattr(manifest.metadata, "project_name", "") or ""
     adapter_type: str = getattr(manifest.metadata, "adapter_type", "") or ""
 
     # 4. Preprocess tests (enums, not-null)
@@ -194,12 +195,13 @@ def extract_project(
         enums[enum_def.name] = [v.name for v in enum_def.values]
 
     return ProjectInfo(
+        project_name=project_name,
+        adapter_type=adapter_type,
         models=models,
         relationships=relationships,
         enums=enums,
         table_lineage=table_lineage,
         column_lineage=column_lineage,
-        adapter_type=adapter_type,
     )
 
 

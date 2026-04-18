@@ -67,6 +67,8 @@ class ProjectInfo(BaseModel):
     This is the intermediate representation that formatters consume.
     """
 
+    project_name: str
+    adapter_type: str
     models: list[ModelInfo] = Field(default_factory=list)
     relationships: list[RelationshipInfo] = Field(default_factory=list)
     enums: dict[str, list[str]] = Field(default_factory=dict)
@@ -74,7 +76,6 @@ class ProjectInfo(BaseModel):
     column_lineage: dict[str, dict[str, list[dict[str, str]]]] = Field(
         default_factory=dict
     )
-    adapter_type: str = ""
 
     def build_lineage_schema(self) -> LineageSchema:
         """Build a LineageSchema from the raw lineage data in this project."""
@@ -110,12 +111,9 @@ class ProjectInfo(BaseModel):
         if not self.models:
             raise ValueError("Cannot build lineage schema: no models in project")
 
-        first_model = self.models[0]
-
         return LineageSchema(
-            database=first_model.database,
-            schema=first_model.schema_,
-            data_source=self.adapter_type,
+            project_name=self.project_name,
+            adapter_type=self.adapter_type,
             table_lineage=table_lineage_items if table_lineage_items else [],
             column_lineage=column_lineage_items if column_lineage_items else [],
         )
@@ -189,12 +187,15 @@ class LineageSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True)
 
-    database: str | None = Field(default=None, description="Database name.")
-    schema_: str = Field(..., alias="schema", description="Schema name.")
-    data_source: str = Field(
+    project_name: str = Field(
         ...,
-        alias="dataSource",
-        description="Data source type (e.g., BIGQUERY, SNOWFLAKE, POSTGRES).",
+        alias="projectName",
+        description="dbt project name.",
+    )
+    adapter_type: str = Field(
+        ...,
+        alias="adapterType",
+        description="dbt adapter type (e.g., duckdb, postgres, mysql).",
     )
     table_lineage: list[TableLineageItem] = Field(
         ...,
