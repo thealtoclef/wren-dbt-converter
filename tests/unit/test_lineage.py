@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 
 from dbt_mdl.dbt.artifacts import load_manifest

@@ -12,9 +12,13 @@ MANIFEST = FIXTURES_DIR / "manifest.json"
 
 def _cli_wren_args():
     return [
-        "generate", "wren",
-        "--catalog", str(CATALOG),
-        "--manifest", str(MANIFEST),
+        "generate",
+        "--format",
+        "wren",
+        "--catalog",
+        str(CATALOG),
+        "--manifest",
+        str(MANIFEST),
     ]
 
 
@@ -50,10 +54,7 @@ def test_cli_all_models_included_by_default(tmp_path):
 
 def test_cli_exclude_single_pattern(tmp_path):
     output_dir = tmp_path / "out"
-    main(
-        _cli_wren_args()
-        + ["--exclude", "^stg_", "--output", str(output_dir)]
-    )
+    main(_cli_wren_args() + ["--exclude", "^stg_", "--output", str(output_dir)])
     data = json.loads((output_dir / "mdl.json").read_text())
     model_names = [m["name"] for m in data["models"]]
     assert "stg_orders" not in model_names
@@ -65,9 +66,12 @@ def test_cli_exclude_multiple_patterns(tmp_path):
     main(
         _cli_wren_args()
         + [
-            "--exclude", "^stg_",
-            "--exclude", "^ord",
-            "--output", str(output_dir),
+            "--exclude",
+            "^stg_",
+            "--exclude",
+            "^ord",
+            "--output",
+            str(output_dir),
         ]
     )
     data = json.loads((output_dir / "mdl.json").read_text())
@@ -84,12 +88,19 @@ def test_cli_no_format_exits():
 
 def test_cli_graphql_generates_db_graphql(tmp_path):
     output_dir = tmp_path / "out"
-    main([
-        "generate", "graphql",
-        "--catalog", str(CATALOG),
-        "--manifest", str(MANIFEST),
-        "--output", str(output_dir),
-    ])
+    main(
+        [
+            "generate",
+            "--format",
+            "graphql",
+            "--catalog",
+            str(CATALOG),
+            "--manifest",
+            str(MANIFEST),
+            "--output",
+            str(output_dir),
+        ]
+    )
     assert (output_dir / "db.graphql").exists()
 
 

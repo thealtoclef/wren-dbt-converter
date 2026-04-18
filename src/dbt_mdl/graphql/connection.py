@@ -92,7 +92,9 @@ class DatabaseManager:
     - a config dict (passed to ``build_db_url``)
     """
 
-    def __init__(self, db_url: str | None = None, *, config: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, db_url: str | None = None, *, config: dict[str, Any] | None = None
+    ) -> None:
         if config and not db_url:
             db_url = build_db_url(config)
         if not db_url:

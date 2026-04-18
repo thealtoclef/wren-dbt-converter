@@ -59,12 +59,23 @@ def _create_dbt_venv(venv_dir: Path) -> Path:
     venv_dir.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["uv", "venv", str(venv_dir), "--python", "3.13"],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv_dir / "bin" / "python"),
-         "dbt-core", "dbt-duckdb"],
-        check=True, capture_output=True, text=True,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv_dir / "bin" / "python"),
+            "dbt-core",
+            "dbt-duckdb",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
         timeout=300,
     )
     return venv_dir / "bin" / "dbt"
@@ -79,8 +90,12 @@ def _run_dbt(dbt_bin: Path, project_dir: Path, profiles_dir: Path) -> None:
         [str(dbt_bin), "docs", "generate"],
     ]:
         result = subprocess.run(
-            cmd, cwd=str(project_dir), capture_output=True,
-            text=True, env=env, timeout=120,
+            cmd,
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
         )
         if result.returncode != 0:
             pytest.fail(

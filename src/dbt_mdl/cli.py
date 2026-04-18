@@ -17,11 +17,15 @@ def main(argv: list[str] | None = None) -> None:
     subparsers = parser.add_subparsers(dest="command")
 
     # ── generate (default when no subcommand) ──────────────────────────
-    gen = subparsers.add_parser("generate", help="Generate output files from dbt artifacts.")
+    gen = subparsers.add_parser(
+        "generate", help="Generate output files from dbt artifacts."
+    )
     _add_generate_args(gen)
 
     # ── serve ──────────────────────────────────────────────────────────
-    srv = subparsers.add_parser("serve", help="Serve a GraphQL API from a db.graphql file.")
+    srv = subparsers.add_parser(
+        "serve", help="Serve a GraphQL API from a db.graphql file."
+    )
     _add_serve_args(srv)
 
     args = parser.parse_args(argv)
@@ -42,9 +46,10 @@ def main(argv: list[str] | None = None) -> None:
 
 def _add_generate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "format",
-        nargs="?",
-        help="Comma-separated output formats: wren, graphql, or all.",
+        "--format",
+        required=True,
+        metavar="FMT",
+        help="Output format: wren, graphql, or all.",
     )
     parser.add_argument(
         "--catalog",
@@ -84,7 +89,10 @@ def _run_generate(args, parser: argparse.ArgumentParser) -> None:
         sys.exit(1)
 
     if not args.catalog or not args.manifest:
-        print("Error: --catalog and --manifest are required for generation.", file=sys.stderr)
+        print(
+            "Error: --catalog and --manifest are required for generation.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     try:
@@ -190,7 +198,7 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_serve(args) -> None:
-    from .graphql import serve
+    from .api import serve
     from .graphql.connection import load_db_config
 
     if not args.db_url and not args.db_config:

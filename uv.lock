@@ -246,16 +246,18 @@ name = "dbt-mdl"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "ariadne" },
     { name = "dbt-artifacts-parser" },
     { name = "dbt-colibri" },
-    { name = "fastapi" },
-    { name = "granian" },
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
 [package.optional-dependencies]
+api = [
+    { name = "ariadne" },
+    { name = "fastapi" },
+    { name = "granian" },
+]
 duckdb = [
     { name = "duckdb-engine" },
 ]
@@ -289,17 +291,17 @@ test = [
 requires-dist = [
     { name = "aiomysql", marker = "extra == 'mysql'", specifier = ">=0.3.2" },
     { name = "aiosqlite", marker = "extra == 'sqlite'", specifier = ">=0.22.1" },
-    { name = "ariadne", specifier = ">=1.0.1" },
+    { name = "ariadne", marker = "extra == 'api'", specifier = ">=1.0.1" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.31" },
     { name = "dbt-artifacts-parser", specifier = ">=0.13.0" },
     { name = "dbt-colibri", specifier = ">=0.3.0" },
     { name = "duckdb-engine", marker = "extra == 'duckdb'", specifier = ">=0.17" },
-    { name = "fastapi", specifier = ">=0.136.0" },
-    { name = "granian", specifier = ">=2.7.3" },
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.136.0" },
+    { name = "granian", marker = "extra == 'api'", specifier = ">=2.7.3" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.49" },
 ]
-provides-extras = ["duckdb", "sqlite", "postgres", "mysql"]
+provides-extras = ["duckdb", "sqlite", "postgres", "mysql", "api"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "datamodel-code-generator", extras = ["http"] }]

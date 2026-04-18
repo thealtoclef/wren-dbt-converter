@@ -33,15 +33,20 @@ def _field_node(name, selections=None):
             self.selection_set = None
             if sels is not None:
                 self.selection_set = type("SS", (), {"selections": sels})()
+
     return FN(name, selections)
 
 
 def _relation_field_node(col_name, child_names):
     children = [_field_node(n) for n in child_names]
-    return type("FN", (), {
-        "name": type("N", (), {"value": col_name})(),
-        "selection_set": type("SS", (), {"selections": children})(),
-    })()
+    return type(
+        "FN",
+        (),
+        {
+            "name": type("N", (), {"value": col_name})(),
+            "selection_set": type("SS", (), {"selections": children})(),
+        },
+    )()
 
 
 def _build_registry(catalog_path: Path, manifest_path: Path) -> TableRegistry:
@@ -64,16 +69,20 @@ class TestE2E:
     async def registry(self, dbt_artifacts):
         artifacts = dbt_artifacts["duckdb"]
         return _build_registry(
-            artifacts["catalog_path"], artifacts["manifest_path"],
+            artifacts["catalog_path"],
+            artifacts["manifest_path"],
         )
 
     @pytest.mark.asyncio
     async def test_select_customers(self, dbt_artifacts, db_connection, registry):
-        fn = _field_node("customers", [
-            _field_node("customer_id"),
-            _field_node("first_name"),
-            _field_node("last_name"),
-        ])
+        fn = _field_node(
+            "customers",
+            [
+                _field_node("customer_id"),
+                _field_node("first_name"),
+                _field_node("last_name"),
+            ],
+        )
         rows = await db_connection["duckdb"].execute(
             compile_query(registry["customers"], [fn], registry)
         )
@@ -83,12 +92,18 @@ class TestE2E:
 
     @pytest.mark.asyncio
     async def test_where_filter(self, dbt_artifacts, db_connection, registry):
-        fn = _field_node("customers", [
-            _field_node("customer_id"),
-            _field_node("first_name"),
-        ])
+        fn = _field_node(
+            "customers",
+            [
+                _field_node("customer_id"),
+                _field_node("first_name"),
+            ],
+        )
         stmt = compile_query(
-            registry["customers"], [fn], registry, where={"customer_id": 1},
+            registry["customers"],
+            [fn],
+            registry,
+            where={"customer_id": 1},
         )
         rows = await db_connection["duckdb"].execute(stmt)
         assert len(rows) == 1
@@ -104,11 +119,14 @@ class TestE2E:
 
     @pytest.mark.asyncio
     async def test_orders_with_relation(self, dbt_artifacts, db_connection, registry):
-        fn = _field_node("orders", [
-            _field_node("order_id"),
-            _field_node("status"),
-            _relation_field_node("customer_id", ["customer_id", "first_name"]),
-        ])
+        fn = _field_node(
+            "orders",
+            [
+                _field_node("order_id"),
+                _field_node("status"),
+                _relation_field_node("customer_id", ["customer_id", "first_name"]),
+            ],
+        )
         rows = await db_connection["duckdb"].execute(
             compile_query(registry["orders"], [fn], registry)
         )

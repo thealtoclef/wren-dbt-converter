@@ -1,12 +1,5 @@
-"""dbt-mdl GraphQL-to-SQL engine.
+"""dbt-mdl GraphQL-to-SQL compiler and schema tools.
 
-Serves a ``db.graphql`` SDL as a live GraphQL API backed by SQLAlchemy async queries.
+Provides db.graphql generation, GraphQL-to-SQL compilation, and schema parsing.
+The API server is in ``dbt_mdl.api`` (requires ``pip install dbt-mdl[api]``).
 """
-
-
-def __getattr__(name):
-    if name in ("create_app", "serve"):
-        from . import server
-
-        return getattr(server, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

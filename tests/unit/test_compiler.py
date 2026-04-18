@@ -22,7 +22,9 @@ def _make_registry() -> tuple[TableDef, TableRegistry]:
         schema="main",
         table="customers",
         columns=[
-            ColumnDef(name="customer_id", gql_type="Integer", not_null=True, is_pk=True),
+            ColumnDef(
+                name="customer_id", gql_type="Integer", not_null=True, is_pk=True
+            ),
             ColumnDef(name="first_name", gql_type="Text"),
             ColumnDef(name="last_name", gql_type="Text"),
         ],
@@ -38,7 +40,9 @@ def _make_registry() -> tuple[TableDef, TableRegistry]:
                 name="customer_id",
                 gql_type="Integer",
                 not_null=True,
-                relation=RelationDef(target_model="customers", target_column="customer_id"),
+                relation=RelationDef(
+                    target_model="customers", target_column="customer_id"
+                ),
             ),
             ColumnDef(name="order_date", gql_type="Text"),
             ColumnDef(name="status", gql_type="Text"),
@@ -66,14 +70,22 @@ def _field_node(name, selections=None):
 
 def _relation_field_node(col_name, child_names):
     children = [_field_node(n) for n in child_names]
-    return type("FN", (), {
-        "name": type("N", (), {"value": col_name})(),
-        "selection_set": type("SS", (), {"selections": children})(),
-    })()
+    return type(
+        "FN",
+        (),
+        {
+            "name": type("N", (), {"value": col_name})(),
+            "selection_set": type("SS", (), {"selections": children})(),
+        },
+    )()
 
 
 def _sql(stmt, dialect_mod) -> str:
-    return str(stmt.compile(dialect=dialect_mod.dialect(), compile_kwargs={"literal_binds": True}))
+    return str(
+        stmt.compile(
+            dialect=dialect_mod.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +96,9 @@ def _sql(stmt, dialect_mod) -> str:
 class TestFlatQuery:
     def test_selects_scalar_columns(self):
         customers, registry = _make_registry()
-        fn = _field_node("customers", [_field_node("customer_id"), _field_node("first_name")])
+        fn = _field_node(
+            "customers", [_field_node("customer_id"), _field_node("first_name")]
+        )
         stmt = compile_query(customers, [fn], registry)
         sql = _sql(stmt, sqlite)
         assert "customer_id" in sql
@@ -123,10 +137,13 @@ class TestWhereFilter:
 def _relation_sql(dialect_mod):
     _, registry = _make_registry()
     orders = registry["orders"]
-    fn = _field_node("orders", [
-        _field_node("order_id"),
-        _relation_field_node("customer_id", ["customer_id", "first_name"]),
-    ])
+    fn = _field_node(
+        "orders",
+        [
+            _field_node("order_id"),
+            _relation_field_node("customer_id", ["customer_id", "first_name"]),
+        ],
+    )
     stmt = compile_query(orders, [fn], registry)
     return _sql(stmt, dialect_mod)
 
@@ -145,18 +162,19 @@ class TestDialectCompilation:
         assert "JSONB_AGG(JSONB_BUILD_OBJECT(" in sql
 
     def test_duckdb_uses_list(self):
-        from sqlalchemy.dialects.postgresql import dialect as _  # noqa
-
         # DuckDB doesn't have a built-in SQLAlchemy dialect,
         # so we compile against the default and check the function name.
         # The compiles registration for "duckdb" only applies when
         # using a DuckDB-aware dialect. For now, verify the default path.
         _, registry = _make_registry()
         orders = registry["orders"]
-        fn = _field_node("orders", [
-            _field_node("order_id"),
-            _relation_field_node("customer_id", ["customer_id", "first_name"]),
-        ])
+        fn = _field_node(
+            "orders",
+            [
+                _field_node("order_id"),
+                _relation_field_node("customer_id", ["customer_id", "first_name"]),
+            ],
+        )
         stmt = compile_query(orders, [fn], registry)
         # Default compilation (no specific dialect)
         sql = str(stmt)

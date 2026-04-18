@@ -13,7 +13,7 @@ from typing import Any
 
 from ariadne import QueryType
 
-from .compiler import compile_query
+from dbt_mdl.graphql.compiler import compile_query
 
 
 def create_query_type(registry) -> QueryType:

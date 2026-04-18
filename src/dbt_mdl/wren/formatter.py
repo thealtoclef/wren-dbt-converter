@@ -94,13 +94,9 @@ def format_mdl(project: ProjectInfo) -> ConvertResult:
         for name, values in project.enums.items()
     ]
 
-    # Catalog/schema from first model
-    mdl_catalog = ""
-    mdl_schema = ""
-    if project.models:
-        first = project.models[0]
-        mdl_catalog = first.database or ""
-        mdl_schema = first.schema_ or ""
+    # MDL catalog/schema — not model location, just namespace identifiers
+    mdl_catalog = "internal"
+    mdl_schema = "public"
 
     data_source_value = _DB_TYPE_MAP.get(conn_type.lower(), conn_type)
 

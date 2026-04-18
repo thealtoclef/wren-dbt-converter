@@ -9,10 +9,7 @@ dependencies = [
     "dbt-artifacts-parser>=0.13.0",
     "dbt-colibri>=0.3.0",
     "pyyaml>=6.0.2",
-    "ariadne>=1.0.1",
     "sqlalchemy[asyncio]>=2.0.49",
-    "fastapi>=0.136.0",
-    "granian>=2.7.3",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +17,11 @@ duckdb = ["duckdb-engine>=0.17"]
 sqlite = ["aiosqlite>=0.22.1"]
 postgres = ["asyncpg>=0.31"]
 mysql = ["aiomysql>=0.3.2"]
+api = [
+    "ariadne>=1.0.1",
+    "fastapi>=0.136.0",
+    "granian>=2.7.3",
+]
 
 [project.scripts]
 dbt-mdl = "dbt_mdl.cli:main"

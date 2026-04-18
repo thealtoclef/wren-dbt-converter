@@ -24,12 +24,14 @@ from .schema import ColumnDef, RelationDef, TableDef, TableRegistry
 
 class json_agg(FunctionElement):
     """Aggregate JSON values — compiles to the right function per dialect."""
+
     name = "json_agg"
     inherit_cache = True
 
 
 class json_build_obj(FunctionElement):
     """Build a JSON object from key/value pairs."""
+
     name = "json_build_obj"
     inherit_cache = True
 
@@ -148,7 +150,6 @@ def _build_correlated_subquery(
         .where(child_table.c[rel.target_column] == parent_aliased.c[parent_fk])
         .correlate(parent_aliased)
     )
-
 
 
 # ---------------------------------------------------------------------------
