@@ -6,7 +6,7 @@ from dbt_graphql.pipeline import extract_project
 from dbt_graphql.mcp.discovery import SchemaDiscovery
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "dbt-artifacts"
+FIXTURES_DIR = next(p for p in Path(__file__).parents if p.name == "tests") / "fixtures" / "dbt-artifacts"
 CATALOG = FIXTURES_DIR / "catalog.json"
 MANIFEST = FIXTURES_DIR / "manifest.json"
 

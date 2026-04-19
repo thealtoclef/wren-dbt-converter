@@ -6,7 +6,7 @@ from pathlib import Path
 from dbt_graphql import extract_project, format_graphql
 
 
-DUCKDB_DIR = Path(__file__).parent.parent / "fixtures" / "dbt-artifacts"
+DUCKDB_DIR = next(p for p in Path(__file__).parents if p.name == "tests") / "fixtures" / "dbt-artifacts"
 CATALOG = DUCKDB_DIR / "catalog.json"
 MANIFEST = DUCKDB_DIR / "manifest.json"
 

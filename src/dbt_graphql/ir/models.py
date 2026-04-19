@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from enum import StrEnum
+from enum import StrEnum, auto
 
 from pydantic import BaseModel, ConfigDict, Field, constr
 
@@ -20,10 +20,16 @@ from pydantic import BaseModel, ConfigDict, Field, constr
 
 
 class JoinType(StrEnum):
-    many_to_one = "many_to_one"
-    one_to_many = "one_to_many"
-    one_to_one = "one_to_one"
-    many_to_many = "many_to_many"
+    many_to_one = auto()
+    one_to_many = auto()
+    one_to_one = auto()
+    many_to_many = auto()
+
+
+class RelationshipOrigin(StrEnum):
+    constraint = auto()
+    data_test = auto()
+    lineage = auto()
 
 
 @dataclass
@@ -31,6 +37,7 @@ class ProcessorRelationship:
     name: str
     models: list[str]
     join_type: JoinType
+    origin: RelationshipOrigin
     condition: str = ""
 
 
@@ -67,9 +74,8 @@ class RelationshipInfo(BaseModel):
     from_column: str
     to_model: str
     to_column: str
-    join_type: str = (
-        "many_to_one"  # "many_to_one" | "one_to_many" | "one_to_one" | "many_to_many"
-    )
+    join_type: JoinType
+    origin: RelationshipOrigin
 
 
 class ModelInfo(BaseModel):
@@ -171,12 +177,12 @@ class TableLineageItem(BaseModel):
 class LineageType(StrEnum):
     """Classification of how a column value is propagated."""
 
-    pass_through = "pass-through"
-    rename = "rename"
-    transformation = "transformation"
-    filter = "filter"
-    join = "join"
-    unknown = "unknown"
+    pass_through = auto()
+    rename = auto()
+    transformation = auto()
+    filter = auto()
+    join = auto()
+    unknown = auto()
 
 
 class Column(BaseModel):
@@ -195,7 +201,7 @@ class Column(BaseModel):
     lineage_type: LineageType = Field(
         ...,
         alias="lineageType",
-        description="Values: pass-through, rename, transformation, filter, join, unknown.",
+        description="Values: pass_through, rename, transformation, filter, join, unknown.",
     )
 
 

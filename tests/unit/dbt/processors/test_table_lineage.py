@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from dbt_graphql.dbt.artifacts import load_manifest
-from dbt_graphql.dbt.processors.lineage import (
+from dbt_graphql.dbt.artifacts import load_catalog, load_manifest
+from dbt_graphql.dbt.processors.compiled_sql import (
     ColumnLineageEdge,
     extract_table_lineage,
     extract_column_lineage,
 )
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "dbt-artifacts"
+FIXTURES_DIR = next(p for p in Path(__file__).parents if p.name == "tests") / "fixtures" / "dbt-artifacts"
 CATALOG = FIXTURES_DIR / "catalog.json"
 MANIFEST = FIXTURES_DIR / "manifest.json"
 
@@ -55,14 +55,14 @@ class TestTableLineage:
 
 class TestColumnLineage:
     def test_returns_dict_of_dicts(self):
-        result = extract_column_lineage(MANIFEST, CATALOG)
+        result = extract_column_lineage(load_manifest(MANIFEST), load_catalog(CATALOG))
         assert isinstance(result, dict)
         for model_name, col_map in result.items():
             assert isinstance(model_name, str)
             assert isinstance(col_map, dict)
 
     def test_edges_have_required_fields(self):
-        result = extract_column_lineage(MANIFEST, CATALOG)
+        result = extract_column_lineage(load_manifest(MANIFEST), load_catalog(CATALOG))
         for model_name, col_map in result.items():
             for col_name, edges in col_map.items():
                 for edge in edges:
@@ -71,19 +71,19 @@ class TestColumnLineage:
                     assert edge.source_column
                     assert edge.target_column == col_name
                     assert edge.lineage_type in (
-                        "pass-through",
+                        "pass_through",
                         "rename",
                         "transformation",
                     )
 
     def test_customers_has_column_lineage(self):
-        result = extract_column_lineage(MANIFEST, CATALOG)
+        result = extract_column_lineage(load_manifest(MANIFEST), load_catalog(CATALOG))
         assert "customers" in result
         assert isinstance(result["customers"], dict)
         assert len(result["customers"]) > 0
 
     def test_stg_models_have_column_lineage(self):
-        result = extract_column_lineage(MANIFEST, CATALOG)
+        result = extract_column_lineage(load_manifest(MANIFEST), load_catalog(CATALOG))
         assert "stg_customers" in result
         assert "stg_orders" in result
         assert "stg_payments" in result

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from dbt_graphql.pipeline import _rel_to_domain, extract_project
-from dbt_graphql.ir.models import JoinType, RelationshipInfo
+from dbt_graphql.ir.models import JoinType, RelationshipInfo, RelationshipOrigin
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "dbt-artifacts"
 CATALOG = FIXTURES / "catalog.json"
@@ -19,12 +19,13 @@ MANIFEST = FIXTURES / "manifest.json"
 # ---------------------------------------------------------------------------
 
 
-def _rel(name, models, join_type, condition=""):
+def _rel(name, models, join_type, condition="", origin=RelationshipOrigin.data_test):
     return SimpleNamespace(
         name=name,
         models=models,
         join_type=join_type,
         condition=condition,
+        origin=origin,
     )
 
 
@@ -72,6 +73,7 @@ class TestRelToDomain:
             name="a_b",
             models=["a", "b"],
             join_type=JoinType.many_to_one,
+            origin=RelationshipOrigin.data_test,
         )
         result = _rel_to_domain(rel)
         assert result.from_column == ""
@@ -244,6 +246,47 @@ class TestCardinalityInference:
             )
             == "one_to_many"
         )
+
+
+class TestOriginPropagation:
+    """The origin tag flows from ProcessorRelationship → RelationshipInfo."""
+
+    def test_test_origin_preserved(self):
+        rel = _rel(
+            name="orders_customers",
+            models=["orders", "customers"],
+            join_type=JoinType.many_to_one,
+            condition='"orders"."customer_id" = "customers"."customer_id"',
+            origin=RelationshipOrigin.data_test,
+        )
+        assert _rel_to_domain(rel).origin == RelationshipOrigin.data_test
+
+    def test_constraint_origin_preserved(self):
+        rel = _rel(
+            name="x_y",
+            models=["x", "y"],
+            join_type=JoinType.many_to_one,
+            origin=RelationshipOrigin.constraint,
+        )
+        assert _rel_to_domain(rel).origin == RelationshipOrigin.constraint
+
+    def test_lineage_origin_preserved(self):
+        rel = _rel(
+            name="x_y",
+            models=["x", "y"],
+            join_type=JoinType.many_to_one,
+            origin=RelationshipOrigin.lineage,
+        )
+        assert _rel_to_domain(rel).origin == RelationshipOrigin.lineage
+
+    def test_jaffle_shop_test_rel_has_test_origin(self):
+        project = extract_project(CATALOG, MANIFEST)
+        rel = next(
+            r
+            for r in project.relationships
+            if r.from_model == "orders" and r.to_model == "customers"
+        )
+        assert rel.origin == RelationshipOrigin.data_test
 
 
 class TestConstraintVsTestPriority:

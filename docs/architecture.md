@@ -33,7 +33,7 @@ A dbt project already contains the things an analytics API needs:
 - resolved warehouse types per column (`catalog.json`)
 - test-encoded semantics: `relationships` tests behave as foreign keys, `unique` and `not_null` tests as column constraints, `accepted_values` as enums
 - dbt v1.5+ first-class `primary_key` / `foreign_key` constraints
-- a dependency graph (table-level lineage for free; column-level with `dbt-colibri`)
+- a dependency graph (table-level lineage for free; column-level via sqlglot)
 
 The usual response to "give my warehouse a GraphQL API" is to introspect the live database (Hasura, PostGraphile, pg_graphql, GraphJin). That throws away everything the dbt project knows — descriptions, tests, modeled relationships, lineage — and re-derives a shallower schema from raw DDL.
 
@@ -60,10 +60,9 @@ Steps 2–4 never touch `manifest.json` again. The only coupling to dbt lives in
                             ▼
                      dbt/processors/
                        artifacts.py       — load manifest & catalog
-                       tests_preprocessor — not_null / unique / accepted_values
-                       constraints.py     — PK / FK from dbt v1.5+
-                       relationships.py   — FK from `relationships` tests
-                       lineage.py         — depends_on + dbt-colibri
+                       constraints.py     — dbt v1.5+ constraints   → PKs + FKs
+                       data_tests.py      — dbt data tests          → not_null / unique / enums / FKs
+                       compiled_sql.py    — sqlglot over compiled SQL → table + column lineage + JOIN-derived FKs
 ```
 
 Entry point: [`src/dbt_graphql/pipeline.py:22`](../src/dbt_graphql/pipeline.py) — `extract_project()`.
@@ -80,9 +79,9 @@ End-to-end steps (matching the source):
    - pull descriptions from the manifest,
    - sort columns by catalog index then name (stable, human-friendly order),
    - fall back `database → schema` for adapters that don't populate database (MySQL).
-6. **Merge relationships.** Constraint-derived FKs take priority; test-derived `relationships` backfill where no constraint exists. Cardinality is inferred from known-unique columns on each side.
+6. **Merge relationships.** Three sources in priority order: dbt v1.5+ `constraints` > `relationships` tests > JOIN-ON mining (sqlglot). Each `ProcessorRelationship` carries an `origin` tag (`constraint` | `data_test` | `lineage` — a `RelationshipOrigin` StrEnum) that propagates to the IR so downstream consumers can reason about confidence. Deduplication is by relationship name: whichever tier lands first wins.
 7. **Attach relationships to models.** Each `RelationshipInfo` ends up on both the from-model and the to-model so downstream consumers can navigate edges without rebuilding an index.
-8. **Extract lineage.** Table lineage from `depends_on.nodes` for every model. Column lineage is optional — wrapped in `try/except ImportError` so `dbt-colibri` stays an optional dependency.
+8. **Extract lineage.** Table lineage from `depends_on.nodes` for every model. Column lineage is built with sqlglot directly — no optional-dependency gate.
 9. **Build enums dict.** Flattens `{enum_name: [values]}` for formatters that want it.
 10. **Return `ProjectInfo`.** The single boundary between extraction and everything that follows.
 
@@ -129,7 +128,7 @@ SQL is emitted via SQLAlchemy Core so we get dialect-aware rendering for free. W
 
 ### 3.8 Don't parse what dbt already parsed
 
-`dbt_artifacts_parser` owns manifest/catalog schema validation. `dbt-colibri` owns column-lineage. `sqlalchemy` owns dialect SQL generation. `graphql-core` owns GraphQL parsing. `ariadne` owns execution. dbt-graphql is the glue — small, opinionated, replaceable.
+`dbt_artifacts_parser` owns manifest/catalog schema validation. `sqlglot` owns SQL parsing/qualification for column and join lineage. `sqlalchemy` owns dialect SQL generation. `graphql-core` owns GraphQL parsing. `ariadne` owns execution. dbt-graphql is the glue — small, opinionated, replaceable.
 
 ---
 
@@ -141,37 +140,7 @@ Everything between extraction and the final outputs speaks IR.
 
 ### Project / model / column / relationship
 
-```python
-class ColumnInfo(BaseModel):
-    name: str
-    type: str                              # raw SQL type, e.g. "VARCHAR(255)"
-    not_null: bool = False
-    unique: bool = False
-    description: str = ""
-    enum_values: list[str] | None = None
-
-class RelationshipInfo(BaseModel):
-    name: str
-    from_model: str
-    from_column: str
-    to_model: str
-    to_column: str
-    join_type: str = "many_to_one"         # or one_to_many / one_to_one / many_to_many
-
-class ModelInfo(BaseModel):
-    name: str                              # dbt model name
-    alias: str | None = None               # warehouse entity name (defaults to name)
-    database: str
-    schema_: str = Field(alias="schema")
-    columns: list[ColumnInfo] = Field(default_factory=list)
-    primary_keys: list[str] = Field(default_factory=list)
-    description: str = ""
-    relationships: list[RelationshipInfo] = Field(default_factory=list)
-
-    @property
-    def relation_name(self) -> str:        # alias if set, else name
-        return self.alias if self.alias else self.name
-```
+Four core Pydantic models — `ColumnInfo`, `ModelInfo`, `RelationshipInfo`, and `ProjectInfo` — carry the full dbt semantics into the rest of the system. See [`src/dbt_graphql/ir/models.py`](../src/dbt_graphql/ir/models.py) for the canonical field list; what follows are the non-obvious design decisions.
 
 Two deliberate choices here:
 
@@ -180,15 +149,7 @@ Two deliberate choices here:
 
 ### Lineage
 
-```python
-class LineageType(StrEnum):
-    pass_through, rename, transformation, filter, join, unknown = ...
-
-class Column(BaseModel):               # aliases: sourceColumn / targetColumn / lineageType
-class TableLineageItem(BaseModel):     # source → target
-class ColumnLineageItem(BaseModel):    # source → target, columns: [Column]
-class LineageSchema(BaseModel):        # the root of lineage.json
-```
+`LineageType` is a `StrEnum` with values `pass_through`, `rename`, `transformation`, `filter`, `join`, `unknown`. The lineage schema (`TableLineageItem`, `ColumnLineageItem`, `LineageSchema`) is defined alongside the other IR types in the same file.
 
 `ProjectInfo.build_lineage_schema()` groups raw column-lineage dicts by `(source, target)`, constructs typed `Column` entries, and validates via Pydantic. JSON serialization uses `by_alias=True` so the output is camelCase (`sourceColumn`, `lineageType`) — friendlier to downstream JavaScript tooling.
 
@@ -196,39 +157,39 @@ class LineageSchema(BaseModel):        # the root of lineage.json
 
 ## 5. dbt extraction (`dbt/`)
 
-Four processors, each responsible for one concern. They're deliberately single-purpose.
+Three source-based processors, each responsible for one input surface. The module name tells you where the data came from, not what shape it has.
 
 ### 5.1 `dbt/artifacts.py`
 
 Thin wrapper around `dbt_artifacts_parser.parser`. Returns typed manifest/catalog objects. The only rule: if someone wants to swap the upstream source (e.g., a dbt Cloud API), this is the only file they need to change.
 
-### 5.2 `dbt/processors/constraints.py`
+### 5.2 `dbt/processors/constraints.py` — dbt v1.5+ constraints
 
-Extracts dbt v1.5+ `constraints` on models and columns.
+Extracts `constraints` on models and columns.
 
 - **Primary keys**: both `constraints[].type == "primary_key"` on the model *and* column-level constraints. Results merged, deduplicated by unique_id.
 - **Foreign keys, legacy form** (pre-v1.9): `expression="other_table(other_col)"`, `columns=["my_col"]`. Parsed with a regex in `_parse_fk_expression()`.
 - **Foreign keys, modern form** (dbt v1.9+): `to="db.schema.other_table"`, `to_columns=["other_col"]`, `columns=["my_col"]`. Resolved to a model name via `_resolve_to_model()` which searches manifest nodes by `relation_name`.
 
-Output is a list of `ProcessorRelationship` (dataclass) with `join_type` defaulting to `many_to_one`. Cardinality refinement happens later, in `pipeline._rel_to_domain()`.
+Output is a list of `ProcessorRelationship` (dataclass) with `join_type` defaulting to `many_to_one` and `origin=RelationshipOrigin.constraint`. Cardinality refinement happens later, in `pipeline._rel_to_domain()`.
 
-### 5.3 `dbt/processors/relationships.py`
+### 5.3 `dbt/processors/data_tests.py` — dbt data tests
 
-Extracts `relationships` tests. For each test node:
-
-- `attached_node` → source model unique_id
-- `column_name` → source column
-- `refs[0].name` → target model
-- `test_metadata.kwargs["field"]` → target column
-
-Column names are cleaned through `_clean_col()` (strips `"`, `` ` ``).
-
-### 5.4 `dbt/processors/tests_preprocessor.py`
-
-Scans `not_null`, `unique`, and `accepted_values` tests.
+Extracts everything authored as a dbt **data test** (schema test). Not to be confused with dbt *unit tests*, a newer feature for asserting model logic — those are ignored here.
 
 - `not_null` / `unique` → booleans keyed by `"{unique_id}.{column_name}"`.
-- `accepted_values` → enum definitions. The enum name is derived from the column name via `_sanitize_enum_name()` (non-alphanumerics dropped, leading digit gets a `_` prefix). Deduplication is by **sorted value tuple** — two columns with the same `accepted_values` list share one enum. Name collisions between distinct value sets get a numeric suffix.
+- `accepted_values` → enum definitions. Enum name is derived from the column name via `_sanitize_enum_name()` (non-alphanumerics dropped, leading digit gets a `_` prefix). Deduplication is by **sorted value tuple** — two columns with the same `accepted_values` list share one enum. Name collisions between distinct value sets get a numeric suffix.
+- `relationships` → `ProcessorRelationship` objects (origin `"data_test"`). For each test node: `attached_node` → source unique_id, `column_name` → source column, `refs[0].name` → target model, `test_metadata.kwargs["field"]` → target column. Column names are cleaned through `_clean_col()` (strips `"` and `` ` ``).
+
+Everything in this module is keyed off `node.test_metadata.name`, so adding support for a new data test type is localized here.
+
+### 5.4 `dbt/processors/compiled_sql.py` — sqlglot over compiled SQL
+
+Centralized sqlglot-driven extraction. Three public functions, one shared parsing pipeline living in the same file (`qualify_model_sql`, `build_schema_for_model`, `build_table_lookup`, `detect_dialect`, `sanitize_sql`, `resolve_table_to_model`):
+
+- `extract_table_lineage(manifest)` — table edges from `depends_on.nodes`. No SQL parsing needed, but it lives here because "what came from the compiled DAG" is the conceptual fit.
+- `extract_column_lineage(manifest, catalog)` — column-level lineage. See §6.2.
+- `extract_join_relationships(manifest, catalog)` — FK-style relationships mined from JOIN ON clauses. For each model's compiled SQL, walks every nested scope and extracts equality pairs from each JOIN ON. Each column reference is resolved through CTE/subquery scopes to a leaf table, which is mapped to a dbt model name via the shared `table_lookup`. Direction rule: the dbt model being processed is always the `from_model`. JOINs where neither side resolves to the current model are skipped (they're upstream-to-upstream and don't describe the current model's edges); self-joins are also skipped. Emitted with `origin=RelationshipOrigin.lineage` and the lowest priority in the merge step, so an explicit constraint or `relationships` test on the same pair always wins.
 
 ### 5.5 Relationship cardinality inference
 
@@ -249,17 +210,23 @@ A column is "unique" if it has a `unique` test or is a single-column PK.
 
 ## 6. Lineage extraction
 
-[`src/dbt_graphql/dbt/processors/lineage.py`](../src/dbt_graphql/dbt/processors/lineage.py)
+[`src/dbt_graphql/dbt/processors/compiled_sql.py`](../src/dbt_graphql/dbt/processors/compiled_sql.py)
 
 ### 6.1 Table-level
 
 For every `model.*` node, emit an edge for each entry in `depends_on.nodes` that starts with `model.`, `seed.`, or `source.`. The result is `{target_model: [upstream_models]}`. Trivial and deterministic — no heuristics, no SQL parsing.
 
-### 6.2 Column-level (via `dbt-colibri`)
+### 6.2 Column-level (via sqlglot)
 
-Column lineage is delegated to [`dbt-colibri`](https://pypi.org/project/dbt-colibri/), which uses SQLGlot to walk compiled SQL and trace columns through transformations. Returns `{model: {column: [ColumnLineageEdge]}}` where each edge carries `source_model`, `source_column`, `target_column`, and `lineage_type` (`pass-through`, `rename`, `transformation`, `filter`, `join`, `unknown`).
+Column lineage is built directly on sqlglot. For every materialized model:
 
-The import is wrapped in `try/except` so `dbt-colibri` is an optional dependency. Internal `__colibri_*` sentinel columns are filtered out on the way through.
+1. Build a per-model schema dict `{database: {schema: {table: {col: type}}}}` restricted to `depends_on.nodes` (more performant; avoids `SELECT *` expansion against unrelated tables).
+2. Sanitize the compiled SQL (dialect-specific: Oracle `LISTAGG DISTINCT` / `ON OVERFLOW` stripping).
+3. Parse with the detected sqlglot dialect (adapter_type `"sqlserver"` → `"tsql"`; Postgres strips quoted identifiers so `SELECT *` can expand; BigQuery lowercases quoted identifiers).
+4. `qualify()` with `validate_qualify_columns=False` and `identify=False` — the goal is scope construction, not a validated rewrite.
+5. `build_scope()` → recursively trace each outer select through CTE/subquery scopes to leaf `exp.Table` nodes, classifying each hop (`pass_through` / `rename` / `transformation`) and taking the max rank across the chain.
+
+Returns `{model: {column: [ColumnLineageEdge]}}` where each edge carries `source_model`, `source_column`, `target_column`, and `lineage_type`. The same qualify/scope pipeline feeds `extract_join_relationships` (§5.4) — both public extractors share internal helpers in the same `compiled_sql.py` module.
 
 ### 6.3 Why lineage is first-class here
 
@@ -323,29 +290,7 @@ The base name is then converted to PascalCase (`capwords()` with `_` → space, 
 
 [`src/dbt_graphql/formatter/schema.py`](../src/dbt_graphql/formatter/schema.py)
 
-At serve time and at compile time, we re-parse `db.graphql` into typed Python objects. This is the inverse of the formatter.
-
-```python
-@dataclass
-class ColumnDef:
-    name: str
-    gql_type: str         # PascalCase
-    is_array: bool = False
-    not_null: bool = False
-    is_pk: bool = False
-    is_unique: bool = False
-    sql_type: str = ""    # from @sql(type: ...)
-    sql_size: str = ""    # from @sql(size: ...)
-    relation: RelationDef | None = None
-
-@dataclass
-class TableDef:
-    name: str
-    database: str = ""
-    schema: str = ""
-    table: str = ""       # physical table name
-    columns: list[ColumnDef]
-```
+At serve time and at compile time, we re-parse `db.graphql` into typed Python objects (`ColumnDef`, `TableDef`) — the inverse of the formatter. See [`src/dbt_graphql/formatter/schema.py`](../src/dbt_graphql/formatter/schema.py) for the field definitions.
 
 `TableRegistry` is a dict-like wrapper: `registry[name]`, `name in registry`, `iter(registry)`. The compiler and the MCP layer both look up tables through it.
 
@@ -524,7 +469,9 @@ A short list of decisions you'd only notice if you were reading the code careful
 6. **Read-only.** See §3.5. If this ever changes, it's a major version.
 7. **Bidirectional relationship adjacency for BFS.** See §11.2.
 8. **Database config decoupled from dbt profiles.** See §9.5.
-9. **Optional `dbt-colibri`.** See §6.2.
+9. **Relationship origin tiers.** Every `RelationshipInfo` records where it came from (`constraint` > `data_test` > `lineage`, as a `RelationshipOrigin` StrEnum). Constraints and tests are user-authored; lineage-inferred relationships are best-effort and can be filtered by consumers that want only explicitly-declared edges. See §5.2, §5.3, §5.4.
+10. **Processor modules are source-based, not output-based.** `constraints.py` / `data_tests.py` / `compiled_sql.py` each correspond to one input surface (dbt constraints / dbt data tests / dbt's compiled SQL). Some modules emit more than one output shape — that's a deliberate choice: when you're chasing a bug, "where did this fact come from?" is the question that matters.
+11. **Column lineage via dbt-colibri's traversal approach.** Column lineage uses the recursive `to_node()` traversal originally developed in dbt-colibri (itself a fork of sqlglot's own lineage module, MIT licensed). The core logic — qualify → build_scope → recursive CTE/subquery/UNION/PIVOT resolution with max-rank classification — is absorbed into `compiled_sql.py` to keep the dependency footprint small while retaining correct handling of complex SQL patterns.
 
 ---
 
@@ -555,7 +502,7 @@ Where we differ: Wren's interface to agents is "write SQL against MDL" (text-to-
 ### 14.3 Other influences
 
 - **[`dbterd`](https://github.com/datnguye/dbterd)** — the pattern of consuming `manifest.json` + `catalog.json` to reverse-engineer ERDs. Relationship test → FK inference comes from this tradition.
-- **[`dbt-colibri`](https://github.com/Datatonic/dbt-colibri)** — column-level lineage extraction via SQLGlot. We use it directly.
+- **[`dbt-colibri`](https://github.com/Datatonic/dbt-colibri)** — a reference implementation of sqlglot-based column lineage over dbt artifacts. Its `lineage.py` is itself a modified fork of sqlglot's own lineage module (MIT). We absorbed the core recursive `to_node()` traversal (per-model subset schema, qualify-then-scope, CTE/subquery/UNION/PIVOT resolution, max-rank classification) directly into `compiled_sql.py` rather than taking a runtime dependency, so the semantics stay under our control and the stack stays minimal.
 - **[PostGraphile](https://postgraphile.org)** — the principle that a schema-driven GraphQL API is a *projection* of a richer upstream model, not a hand-authored artifact. PostGraphile projects from Postgres catalogs; we project from dbt artifacts.
 
 ---

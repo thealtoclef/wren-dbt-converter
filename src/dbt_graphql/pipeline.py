@@ -11,12 +11,15 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from .ir.models import ColumnInfo, ProjectInfo, ModelInfo, RelationshipInfo
+from .ir.models import ColumnInfo, JoinType, ProjectInfo, ModelInfo, RelationshipInfo
 from .dbt.artifacts import load_catalog, load_manifest
+from .dbt.processors.compiled_sql import (
+    extract_column_lineage,
+    extract_join_relationships,
+    extract_table_lineage,
+)
 from .dbt.processors.constraints import extract_constraints
-from .dbt.processors.lineage import extract_table_lineage
-from .dbt.processors.relationships import build_relationships
-from .dbt.processors.tests_preprocessor import preprocess_tests
+from .dbt.processors.data_tests import build_relationships, preprocess_tests
 
 
 def extract_project(
@@ -53,8 +56,8 @@ def extract_project(
     manifest = load_manifest(manifest_path)
 
     # 3. Get project name and adapter type from manifest metadata
-    project_name: str = getattr(manifest.metadata, "project_name", "") or ""
-    adapter_type: str = getattr(manifest.metadata, "adapter_type", "") or ""
+    project_name: str = getattr(manifest.metadata, "project_name", None) or ""
+    adapter_type: str = getattr(manifest.metadata, "adapter_type", None) or ""
 
     # 4. Preprocess tests (enums, not-null)
     tests_result = preprocess_tests(manifest)
@@ -78,7 +81,7 @@ def extract_project(
 
         # Build columns
         catalog_columns: dict = catalog_node.columns or {}
-        manifest_columns: dict = getattr(manifest_node, "columns", {})
+        manifest_columns: dict = getattr(manifest_node, "columns", None) or {}
 
         pk_cols: list[str] = constraints_result.primary_keys.get(key, [])
 
@@ -99,7 +102,9 @@ def extract_project(
                         enum_values = [v.name for v in enum_def.values]
                         break
 
-            description = getattr(manifest_columns.get(col_name), "description", "")
+            description = (
+                getattr(manifest_columns.get(col_name), "description", None) or ""
+            )
 
             columns.append(
                 ColumnInfo(
@@ -129,7 +134,7 @@ def extract_project(
 
         # Get alias and description from manifest node
         model_alias = getattr(manifest_node, "alias", None)
-        description = getattr(manifest_node, "description", "")
+        description = getattr(manifest_node, "description", None) or ""
 
         models.append(
             ModelInfo(
@@ -143,8 +148,10 @@ def extract_project(
             )
         )
 
-    # 7. Build relationships (merge: constraints > tests)
-    test_relationships = build_relationships(manifest)
+    # 7. Build relationships (merge: constraints > data_tests > compiled_sql)
+    constraint_relationships = constraints_result.foreign_key_relationships
+    data_test_relationships = build_relationships(manifest)
+    compiled_sql_relationships = extract_join_relationships(manifest, catalog)
     seen_names: set[str] = set()
     relationships: list[RelationshipInfo] = []
 
@@ -160,12 +167,17 @@ def extract_project(
         ):  # composite PKs don't make any individual column unique
             unique_cols.add((uid.split(".")[-1], pk_cols_list[0]))
 
-    for rel in constraints_result.foreign_key_relationships:
+    for rel in constraint_relationships:
         relationships.append(_rel_to_domain(rel, unique_cols))
         seen_names.add(rel.name)
-    for rel in test_relationships:
+    for rel in data_test_relationships:
         if rel.name not in seen_names:
             relationships.append(_rel_to_domain(rel, unique_cols))
+            seen_names.add(rel.name)
+    for rel in compiled_sql_relationships:
+        if rel.name not in seen_names:
+            relationships.append(_rel_to_domain(rel, unique_cols))
+            seen_names.add(rel.name)
 
     # 8. Attach relationships to models
     model_by_name: dict[str, ModelInfo] = {m.name: m for m in models}
@@ -180,26 +192,20 @@ def extract_project(
     # 9. Extract lineage
     table_lineage = extract_table_lineage(manifest)
 
-    # Column lineage (via dbt-colibri)
     column_lineage: dict[str, dict[str, list[dict[str, str]]]] = {}
-    try:
-        from .dbt.processors.lineage import extract_column_lineage
-
-        col_result = extract_column_lineage(manifest_path, catalog_path)
-        for model_name, col_map in col_result.items():
-            column_lineage[model_name] = {}
-            for col_name, edges in col_map.items():
-                column_lineage[model_name][col_name] = [
-                    {
-                        "source_model": e.source_model,
-                        "source_column": e.source_column,
-                        "target_column": e.target_column,
-                        "lineage_type": e.lineage_type,
-                    }
-                    for e in edges
-                ]
-    except Exception:
-        pass  # dbt-colibri not available
+    col_result = extract_column_lineage(manifest, catalog)
+    for model_name, col_map in col_result.items():
+        column_lineage[model_name] = {}
+        for col_name, edges in col_map.items():
+            column_lineage[model_name][col_name] = [
+                {
+                    "source_model": e.source_model,
+                    "source_column": e.source_column,
+                    "target_column": e.target_column,
+                    "lineage_type": e.lineage_type,
+                }
+                for e in edges
+            ]
 
     # 10. Build enums dict
     enums: dict[str, list[str]] = {}
@@ -223,7 +229,7 @@ def _infer_join_type(
     to_model: str,
     to_col: str,
     unique_cols: set[tuple[str, str]],
-) -> str:
+) -> JoinType:
     """Infer cardinality from known-unique columns on each side of the relationship.
 
     A column is "unique" if it has a dbt unique test or is declared as a primary key.
@@ -234,12 +240,12 @@ def _infer_join_type(
     from_unique = (from_model, from_col) in unique_cols
     to_unique = (to_model, to_col) in unique_cols
     if from_unique and to_unique:
-        return "one_to_one"
+        return JoinType.one_to_one
     if from_unique:
-        return "one_to_many"
+        return JoinType.one_to_many
     if to_unique:
-        return "many_to_one"
-    return "many_to_one"  # fallback: assume standard FK pattern
+        return JoinType.many_to_one
+    return JoinType.many_to_one  # fallback: assume standard FK pattern
 
 
 def _rel_to_domain(
@@ -262,7 +268,7 @@ def _rel_to_domain(
             from_model, from_col, to_model, to_col, unique_cols
         )
     else:
-        join_type = str(rel.join_type)
+        join_type = rel.join_type
 
     return RelationshipInfo(
         name=rel.name,
@@ -271,4 +277,5 @@ def _rel_to_domain(
         to_model=to_model,
         to_column=to_col,
         join_type=join_type,
+        origin=rel.origin,
     )

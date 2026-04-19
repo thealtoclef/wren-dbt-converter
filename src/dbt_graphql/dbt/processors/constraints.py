@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from ...ir.models import ProcessorRelationship, JoinType
+from ...ir.models import ProcessorRelationship, JoinType, RelationshipOrigin
+from ..artifacts import DbtManifest
 
 
 @dataclass
@@ -67,7 +68,7 @@ def _parse_fk_expression(expression: str) -> tuple[str, str] | None:
     return table_name, col.strip().strip('"').strip("`")
 
 
-def extract_constraints(manifest) -> ConstraintsResult:
+def extract_constraints(manifest: DbtManifest) -> ConstraintsResult:
     """Scan manifest model nodes for dbt constraints (v1.5+).
 
     Extracts:
@@ -89,14 +90,14 @@ def extract_constraints(manifest) -> ConstraintsResult:
             ctype = (
                 constraint.get("type", "")
                 if isinstance(constraint, dict)
-                else getattr(constraint, "type", "")
+                else getattr(constraint, "type", None) or ""
             )
 
             if ctype == "primary_key":
                 columns = (
                     constraint.get("columns", [])
                     if isinstance(constraint, dict)
-                    else getattr(constraint, "columns", [])
+                    else getattr(constraint, "columns", None) or []
                 )
                 if columns:
                     result.primary_keys[unique_id] = [str(c) for c in columns]
@@ -105,22 +106,22 @@ def extract_constraints(manifest) -> ConstraintsResult:
                 expression = (
                     constraint.get("expression", "")
                     if isinstance(constraint, dict)
-                    else getattr(constraint, "expression", "")
+                    else getattr(constraint, "expression", None) or ""
                 )
                 fk_columns = (
                     constraint.get("columns", [])
                     if isinstance(constraint, dict)
-                    else getattr(constraint, "columns", [])
+                    else getattr(constraint, "columns", None) or []
                 )
                 to_str = (
                     constraint.get("to", "")
                     if isinstance(constraint, dict)
-                    else getattr(constraint, "to", "")
+                    else getattr(constraint, "to", None) or ""
                 )
                 to_columns = (
                     constraint.get("to_columns", [])
                     if isinstance(constraint, dict)
-                    else getattr(constraint, "to_columns", [])
+                    else getattr(constraint, "to_columns", None) or []
                 ) or []
 
                 to_table: str | None = None
@@ -151,6 +152,7 @@ def extract_constraints(manifest) -> ConstraintsResult:
                                 name=rel_name,
                                 models=[from_model, to_table],
                                 join_type=JoinType.many_to_one,
+                                origin=RelationshipOrigin.constraint,
                                 condition=condition,
                             )
                         )
@@ -168,7 +170,7 @@ def extract_constraints(manifest) -> ConstraintsResult:
                     ctype = (
                         constraint.get("type", "")
                         if isinstance(constraint, dict)
-                        else getattr(constraint, "type", "")
+                        else getattr(constraint, "type", None) or ""
                     )
 
                     if ctype == "primary_key":
@@ -180,17 +182,17 @@ def extract_constraints(manifest) -> ConstraintsResult:
                         expression = (
                             constraint.get("expression", "")
                             if isinstance(constraint, dict)
-                            else getattr(constraint, "expression", "")
+                            else getattr(constraint, "expression", None) or ""
                         )
                         to_str = (
                             constraint.get("to", "")
                             if isinstance(constraint, dict)
-                            else getattr(constraint, "to", "")
+                            else getattr(constraint, "to", None) or ""
                         )
                         to_columns = (
                             constraint.get("to_columns", [])
                             if isinstance(constraint, dict)
-                            else getattr(constraint, "to_columns", [])
+                            else getattr(constraint, "to_columns", None) or []
                         ) or []
 
                         to_table = None
@@ -220,6 +222,7 @@ def extract_constraints(manifest) -> ConstraintsResult:
                                         name=rel_name,
                                         models=[from_model, to_table],
                                         join_type=JoinType.many_to_one,
+                                        origin=RelationshipOrigin.constraint,
                                         condition=condition,
                                     )
                                 )
