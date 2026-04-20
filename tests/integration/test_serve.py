@@ -1,7 +1,7 @@
-"""Integration tests for the GraphQL HTTP server (FastAPI + Ariadne + SQLite).
+"""Integration tests for the GraphQL HTTP server (Starlette + Ariadne + SQLite).
 
 Creates a real SQLite database, generates a minimal db.graphql schema, starts
-the FastAPI app via Starlette's TestClient (which handles the ASGI lifespan),
+the Starlette app via Starlette's TestClient (which handles the ASGI lifespan),
 and makes real HTTP GraphQL requests to verify the full request path.
 """
 
@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from starlette.testclient import TestClient
 
-from dbt_graphql.serve.app import create_app
+from dbt_graphql.api.app import create_app
 
 pytest.importorskip("aiosqlite", reason="aiosqlite required for SQLite async tests")
 
@@ -69,7 +69,7 @@ def db_graphql_file(tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="module")
 def client(sqlite_db, db_graphql_file) -> TestClient:
-    """TestClient wrapping the real FastAPI app; handles ASGI lifespan."""
+    """TestClient wrapping the real Starlette app; handles ASGI lifespan."""
     app = create_app(
         db_graphql_path=db_graphql_file,
         db_url=f"sqlite+aiosqlite:///{sqlite_db}",

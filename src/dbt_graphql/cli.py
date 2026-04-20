@@ -231,13 +231,17 @@ def _run_serve(args) -> None:
         if targets == {"mcp"}:
             # MCP only — run directly in main thread
             from .mcp.server import serve_mcp
+
             serve_mcp(project, db=db)
             return
 
         # api + mcp — start MCP in a daemon thread
         import threading
         from .mcp.server import serve_mcp
-        t = threading.Thread(target=serve_mcp, args=(project,), kwargs={"db": db}, daemon=True)
+
+        t = threading.Thread(
+            target=serve_mcp, args=(project,), kwargs={"db": db}, daemon=True
+        )
         t.start()
 
     if "api" in targets:

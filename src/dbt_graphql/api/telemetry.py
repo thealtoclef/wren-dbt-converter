@@ -6,7 +6,7 @@ def instrument_sqlalchemy(engine) -> None:
     try:
         from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
-        SQLAlchemyInstrumentor().instrument(engine=engine)
+        SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
     except ImportError:
         pass
 
