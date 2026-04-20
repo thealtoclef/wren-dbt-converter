@@ -5,12 +5,18 @@ from pathlib import Path
 
 from ariadne import make_executable_schema
 from ariadne.asgi import GraphQL
-from fastapi import FastAPI
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 from ..compiler.connection import DatabaseManager
 from ..config import DbConfig
 from ..formatter.schema import TableRegistry, load_db_graphql
 from .resolvers import create_query_type
+from .telemetry import (
+    build_graphql_http_handler,
+    instrument_sqlalchemy,
+    instrument_starlette,
+)
 
 _STANDARD_GQL_SCALARS = {"String", "Int", "Float", "Boolean", "ID"}
 
@@ -61,21 +67,18 @@ def create_app(
     db_graphql_path: str | Path,
     db_url: str | None = None,
     config: DbConfig | None = None,
-) -> FastAPI:
-    """Build a FastAPI app with Ariadne GraphQL mounted at ``/graphql``."""
-    schema_info, registry = load_db_graphql(db_graphql_path)
+) -> Starlette:
+    """Build a Starlette app with Ariadne GraphQL mounted at ``/graphql``."""
+    _, registry = load_db_graphql(db_graphql_path)
     db = DatabaseManager(db_url=db_url, config=config)
 
     query_type = create_query_type(registry)
     gql_schema = make_executable_schema(_build_ariadne_sdl(registry), query_type)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        await db.connect()
-        yield
-        await db.close()
-
-    app = FastAPI(lifespan=lifespan)
+    http_handler = build_graphql_http_handler()
+    graphql_kwargs = {}
+    if http_handler is not None:
+        graphql_kwargs["http_handler"] = http_handler
 
     graphql_app = GraphQL(
         gql_schema,
@@ -84,13 +87,22 @@ def create_app(
             "registry": registry,
             "db": db,
         },
+        **graphql_kwargs,
     )
-    app.mount("/graphql", graphql_app)
 
+    @asynccontextmanager
+    async def lifespan(_app: Starlette):
+        await db.connect()
+        instrument_sqlalchemy(db._engine)
+        yield
+        await db.close()
+
+    app = Starlette(lifespan=lifespan, routes=[Mount("/graphql", graphql_app)])
+    instrument_starlette(app)
     return app
 
 
-_asgi_app: FastAPI | None = None
+_asgi_app: Starlette | None = None
 
 
 def serve(

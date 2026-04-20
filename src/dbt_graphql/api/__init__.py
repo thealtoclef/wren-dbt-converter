@@ -1,7 +1,6 @@
-"""dbt-mdl GraphQL API server.
+"""GraphQL API server (Starlette + Ariadne + Granian).
 
-Provides FastAPI + Ariadne GraphQL server backed by SQLAlchemy async.
-Requires the ``api`` extra: ``pip install dbt-mdl[api]``
+Requires the ``api`` extra: ``pip install dbt-graphql[api]``
 """
 
 

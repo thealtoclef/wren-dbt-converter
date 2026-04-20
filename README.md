@@ -16,7 +16,7 @@ dbt-graphql reads `catalog.json` and `manifest.json`, projects them into a Graph
 
 ```bash
 pip install dbt-graphql                 # generate only
-pip install dbt-graphql[api]            # + GraphQL API server
+pip install dbt-graphql[api]            # + GraphQL API server (includes OpenTelemetry)
 pip install dbt-graphql[mcp]            # + MCP server
 pip install dbt-graphql[duckdb]         # warehouse drivers
 pip install dbt-graphql[postgres]
@@ -30,7 +30,6 @@ pip install dbt-graphql[sqlite]
 
 ```bash
 dbt-graphql generate \
-  --format graphql \
   --catalog target/catalog.json \
   --manifest target/manifest.json \
   --output output/
@@ -42,8 +41,9 @@ Produces `output/db.graphql` and `output/lineage.json`.
 
 ```bash
 dbt-graphql serve \
+  --target api \
   --db-graphql output/db.graphql \
-  --db-url duckdb+duckdb:///jaffle_shop.duckdb
+  --config config.yml
 ```
 
 Playground at `http://localhost:8080/graphql`.
@@ -51,25 +51,36 @@ Playground at `http://localhost:8080/graphql`.
 ### 3. Start the MCP server
 
 ```bash
-dbt-graphql mcp \
+dbt-graphql serve \
+  --target mcp \
   --catalog target/catalog.json \
   --manifest target/manifest.json \
-  --db-url duckdb+duckdb:///jaffle_shop.duckdb
+  --config config.yml
 ```
 
 Starts an MCP stdio server for Claude Desktop, Cline, and other MCP clients.
+
+### 4. Serve both at once
+
+```bash
+dbt-graphql serve \
+  --target api,mcp \
+  --db-graphql output/db.graphql \
+  --catalog target/catalog.json \
+  --manifest target/manifest.json \
+  --config config.yml
+```
 
 ## Commands
 
 ### `generate`
 
 ```
-dbt-graphql generate --format graphql --catalog PATH --manifest PATH [--output DIR] [--exclude PATTERN]
+dbt-graphql generate --catalog PATH --manifest PATH [--output DIR] [--exclude PATTERN]
 ```
 
 | Flag         | Description                                                                 |
 |--------------|-----------------------------------------------------------------------------|
-| `--format`   | Output format (`graphql`)                                                   |
 | `--catalog`  | Path to `catalog.json` (from `dbt docs generate`)                           |
 | `--manifest` | Path to `manifest.json` (from `dbt compile` or `dbt run`)                   |
 | `--output`   | Output directory (default: current directory)                               |
@@ -78,42 +89,46 @@ dbt-graphql generate --format graphql --catalog PATH --manifest PATH [--output D
 ### `serve`
 
 ```
-dbt-graphql serve --db-graphql PATH --db-url URL [--host HOST] [--port PORT]
+dbt-graphql serve --target TARGET [--db-graphql PATH] [--config PATH] [--catalog PATH] [--manifest PATH] [--exclude PATTERN]
 ```
 
-| Flag           | Description                                                       |
-|----------------|-------------------------------------------------------------------|
-| `--db-graphql` | Path to `db.graphql` SDL file                                     |
-| `--db-url`     | SQLAlchemy async URL (e.g. `postgresql+asyncpg://user:pw@host/db`) |
-| `--db-config`  | Path to `db.yml` config (alternative to `--db-url`)                |
-| `--host`       | Bind host (default: `0.0.0.0`)                                     |
-| `--port`       | Bind port (default: `8080`)                                        |
+| Flag           | Description                                                                  |
+|----------------|------------------------------------------------------------------------------|
+| `--target`     | Interfaces to serve: `api`, `mcp`, or `api,mcp` (default: `api`)             |
+| `--db-graphql` | Path to `db.graphql` SDL file (required for `api`)                           |
+| `--config`     | Path to `config.yml` (required for `api`; optional for `mcp`)                |
+| `--catalog`    | Path to `catalog.json` (required for `mcp`)                                  |
+| `--manifest`   | Path to `manifest.json` (required for `mcp`)                                 |
+| `--exclude`    | Regex pattern to exclude models (mcp only); may be repeated                  |
 
-### `mcp`
+`config.yml` format:
 
+```yaml
+db:
+  type: postgres   # postgres | mysql | mariadb | sqlite | duckdb | doris
+  host: localhost
+  port: 5432
+  dbname: mydb
+  user: alice
+  password: secret
+
+serve:
+  host: 0.0.0.0
+  port: 8080
 ```
-dbt-graphql mcp --catalog PATH --manifest PATH [--db-url URL] [--exclude PATTERN]
-```
-
-| Flag         | Description                                                    |
-|--------------|----------------------------------------------------------------|
-| `--catalog`  | Path to `catalog.json`                                         |
-| `--manifest` | Path to `manifest.json`                                        |
-| `--db-url`   | SQLAlchemy async URL for live execution (optional)             |
-| `--exclude`  | Regex pattern to exclude models                                |
 
 ## A taste of the generated schema
 
 ```graphql
-type orders @database(name: mydb) @schema(name: public) @table(name: orders) {
-  order_id: Integer! @sql(type: "INTEGER") @id
-  customer_id: Integer! @sql(type: "INTEGER") @relation(type: customers, field: customer_id)
-  status: Varchar @sql(type: "VARCHAR")
-  amount: Numeric @sql(type: "NUMERIC", size: "10,2")
+type orders @table(database: "mydb", schema: "public", name: "orders") {
+  order_id: Int! @column(type: "INTEGER") @id
+  customer_id: Int! @column(type: "INTEGER") @relation(type: customers, field: customer_id)
+  status: String @column(type: "VARCHAR")
+  amount: Float @column(type: "NUMERIC", size: "10,2")
 }
 ```
 
-Column types render as PascalCase GraphQL names (`INTEGER` → `Integer`, `TIMESTAMP WITH TIME ZONE` → `TimestampWithTimeZone`), with the exact SQL type preserved in an `@sql` directive so the compiler can emit warehouse-correct SQL.
+SQL types map to standard GraphQL scalars (`Int`, `Float`, `Boolean`, `String`). The exact SQL type and precision are preserved in an `@column` directive so the compiler can emit warehouse-correct SQL without parsing the GraphQL type name.
 
 ## Documentation
 

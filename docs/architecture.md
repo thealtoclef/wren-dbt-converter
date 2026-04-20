@@ -17,7 +17,7 @@ If you're looking for the landscape comparison (where dbt-graphql sits vs. Cube,
 - [7. GraphQL schema emission (`formatter/graphql.py`)](#7-graphql-schema-emission-formattergraphqlpy)
 - [8. SDL parsing & `TableRegistry` (`formatter/schema.py`)](#8-sdl-parsing--tableregistry-formatterschemapy)
 - [9. GraphQL → SQL compiler (`compiler/`)](#9-graphql--sql-compiler-compiler)
-- [10. Serve layer (`serve/`)](#10-serve-layer-serve)
+- [10. GraphQL API layer (`api/`)](#10-graphql-api-layer-api)
 - [11. MCP server (`mcp/`)](#11-mcp-server-mcp)
 - [12. CLI (`cli.py`)](#12-cli-clipy)
 - [13. Cross-cutting design notes](#13-cross-cutting-design-notes)
@@ -55,7 +55,7 @@ Steps 2–4 never touch `manifest.json` again. The only coupling to dbt lives in
  ─────────────                     ──────────────────           ───────
  catalog.json                                                   db.graphql      ◀── formatter/graphql.py
  manifest.json   ──▶ pipeline.extract_project()  ──▶  ───────▶  lineage.json   ◀── ProjectInfo.build_lineage_schema()
-                            │                                   GraphQL API     ◀── serve/  (uses db.graphql)
+                            │                                   GraphQL API     ◀── api/    (uses db.graphql)
                             │                                   MCP tools       ◀── mcp/    (uses ProjectInfo)
                             ▼
                      dbt/processors/
@@ -112,7 +112,7 @@ Crossing the boundary is a deliberate step: `pipeline.extract_project()` convert
 
 ### 3.4 Preserve the SQL type
 
-GraphQL type systems are coarse. SQL type systems are precise (`NUMERIC(10,2)` matters). We pick both: the GraphQL field gets a PascalCase name (`Numeric`, `Varchar`, `TimestampWithTimeZone`) for tooling compatibility, and an `@sql(type: "NUMERIC", size: "10,2")` directive preserves the exact database type for the compiler. The compiler never has to parse a PascalCase GraphQL name back into SQL.
+GraphQL type systems are coarse. SQL type systems are precise (`NUMERIC(10,2)` matters). We pick both: the GraphQL field gets a standard scalar (`Int`, `Float`, `Boolean`, `String`) for tooling compatibility, and an `@column(type: "NUMERIC", size: "10,2")` directive preserves the exact database type for the compiler. The compiler never has to reverse-engineer SQL types from GraphQL scalar names.
 
 ### 3.5 Read-only by design
 
@@ -243,22 +243,20 @@ Converts `ProjectInfo` to SDL. One `ModelInfo` becomes one `type` block.
 ### 7.1 Type-level directives
 
 ```graphql
-type orders @database(name: mydb) @schema(name: public) @table(name: orders) {
+type orders @table(database: "mydb", schema: "public", name: "orders") {
   ...
 }
 ```
 
-- `@database(name:)` — warehouse database from catalog metadata
-- `@schema(name:)` — warehouse schema
-- `@table(name:)` — physical table name (honors the dbt `alias` if set; otherwise the model name)
+- `@table(database:, schema:, name:)` — maps the GraphQL type to the physical warehouse table; honors the dbt `alias` if set.
 
-Carrying these on the GraphQL type means the SQL compiler doesn't need to look the model up in a separate manifest at query time — the SDL alone is sufficient.
+Carrying this on the GraphQL type means the SQL compiler doesn't need to look the model up in a separate manifest at query time — the SDL alone is sufficient.
 
 ### 7.2 Field-level directives
 
 For each column:
 
-- `@sql(type: "...", size: "...")` — **always present.** Preserves the raw SQL type and any size/precision. This is the bridge between GraphQL's coarse type system and real warehouse types.
+- `@column(type: "...", size: "...")` — **always present.** Preserves the raw SQL type and any size/precision. This is the bridge between GraphQL's coarse type system and real warehouse types.
 - `@id` — only on a *sole-column* primary key. Composite PK parts do not get `@id` because none of them individually identifies a row.
 - `@unique` — column has a `unique` test and is not already the sole PK.
 - `@relation(type: TargetModel, field: target_col)` — foreign key, rendered by looking up `(model.name, col.name)` in a precomputed `rel_map`.
@@ -277,11 +275,11 @@ For each column:
 | `TEXT[]` (Postgres)        | `TEXT`                    | ``      | true     |
 | `ARRAY<STRING>` (BigQuery) | `STRING`                  | ``      | true     |
 
-The base name is then converted to PascalCase (`capwords()` with `_` → space, then spaces dropped) to produce a valid GraphQL name (`Integer`, `Varchar`, `DoublePrecision`, `TimestampWithTimeZone`, `Text`, `String`).
+The base name is then mapped to a standard GraphQL scalar via `_sql_to_gql_scalar()`: boolean types → `Boolean`, integer types (anything ending in `INT`, plus `INTEGER`, `INT64`, etc.) → `Int`, numeric/float types → `Float`, everything else → `String`.
 
 ### 7.4 What is *not* emitted
 
-- No scalar definitions. The PascalCase names are emitted as-is; the serve layer declares them as scalars when it assembles the Ariadne schema. This keeps `db.graphql` minimal and human-readable.
+- No scalar definitions. All field types are standard GraphQL scalars (`Int`, `Float`, `Boolean`, `String`); the serve layer needs no extra scalar declarations for these. This keeps `db.graphql` minimal and human-readable.
 - No query root. `db.graphql` is a description of the warehouse, not a queryable GraphQL schema. The query root is generated at serve time.
 
 ---
@@ -371,17 +369,17 @@ What is **not** supported (explicitly):
 
 ### 9.5 Connection management (`compiler/connection.py`)
 
-`DatabaseManager` owns an async SQLAlchemy 2.0 engine, exposes `execute()` for a `Select` and `execute_text()` for raw SQL, and tracks the dialect name for downstream code that needs to branch on it. `build_db_url()` accepts either a SQLAlchemy URL directly or a YAML config dict, mapping config `type:` keys to async drivers (`aiomysql`, `asyncpg`, `aiosqlite`). SQLite is special-cased (file path in host, no auth).
+`DatabaseManager` owns an async SQLAlchemy 2.0 engine, exposes `execute()` for a `Select` and `execute_text()` for raw SQL, and tracks the dialect name for downstream code that needs to branch on it. Two construction paths: pass a raw SQLAlchemy URL string via `db_url` (used for DuckDB and any URL not covered by the config map), or pass a `DbConfig` via `config` which runs through `build_db_url()`. `build_db_url()` maps `config.type` keys to async driver schemes (`aiomysql`, `asyncpg`, `aiosqlite`); SQLite is special-cased (file path in host, no auth). DuckDB is not in the driver map — connect it via a raw `duckdb+duckdb:///path` URL.
 
 No dbt profiles parser — the database configuration is deliberately decoupled from dbt. A dbt project's `profiles.yml` describes how dbt connects during transformation; a production serve layer connects differently (different credentials, pooling, network) and we don't force the two to collide.
 
 ---
 
-## 10. Serve layer (`serve/`)
+## 10. GraphQL API layer (`api/`)
 
-[`src/dbt_graphql/serve/app.py`](../src/dbt_graphql/serve/app.py)
+[`src/dbt_graphql/api/app.py`](../src/dbt_graphql/api/app.py)
 
-FastAPI + Ariadne, served via `granian` (Rust-based ASGI server).
+Starlette + Ariadne, served via `granian` (Rust-based ASGI server). Starlette is already a hard dependency of Ariadne, so no extra package is needed for the outer app.
 
 ### 10.1 Assembling the Ariadne schema
 
@@ -396,17 +394,27 @@ This is a deliberate separation: `db.graphql` is the *description* of the wareho
 
 ### 10.2 Lifecycle
 
-`create_app()` builds the FastAPI app, mounts `/graphql`, and uses an `@asynccontextmanager` lifespan to connect/close the `DatabaseManager`. State that resolvers need (`TableRegistry`, `DatabaseManager`) is attached to `info.context` — never closure-captured, never module-global.
+`create_app()` builds the Starlette app, mounts `/graphql`, and uses an `@asynccontextmanager` lifespan to connect/close the `DatabaseManager`. State that resolvers need (`TableRegistry`, `DatabaseManager`) is attached to `info.context` — never closure-captured, never module-global.
 
 ### 10.3 Resolvers
 
-`serve/resolvers.py` registers one resolver per table. Each resolver:
+`api/resolvers.py` registers one resolver per table. Each resolver:
 
 1. Pulls the `TableDef` out of the registry.
 2. Calls `compile_query()` with the GraphQL field nodes, `limit`, `offset`, `where` from kwargs.
 3. Executes via the `DatabaseManager`, returns rows as dicts.
 
 That's all. No N+1 issues because nested relations are resolved inside the same query via the correlated-subquery mechanism.
+
+### 10.4 Observability
+
+OTel is bundled with `dbt-graphql[api]` — no separate extra needed. Three layers activate automatically when an OTel SDK is configured:
+
+- **Starlette** (`opentelemetry-instrumentation-starlette`) — HTTP request spans
+- **Ariadne** (`ariadne.contrib.tracing.opentelemetry.OpenTelemetryExtension`) — GraphQL operation and per-resolver spans; wired via `GraphQLHTTPHandler(extensions=[OpenTelemetryExtension])`
+- **SQLAlchemy** (`opentelemetry-instrumentation-sqlalchemy`) — per-query spans attached to the engine after connect
+
+Configure via standard OTel env vars: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `OTEL_TRACES_EXPORTER`. The SDK is bootstrapped in `api/telemetry.py` before the app starts. All OTel calls are no-ops when no exporter is configured.
 
 ---
 
@@ -425,7 +433,7 @@ This is the surface LLM agents actually use. It's structured around **how agents
 | `find_path(from_table, to_table)`   | Shortest join path(s) via BFS on the relationship graph.                |
 | `explore_relationships(table_name)` | All directly related tables with direction (outgoing / incoming).       |
 | `build_query(table, fields)`        | Generate a boilerplate GraphQL query for a table and field list.        |
-| `execute_query(sql)`                | Run SQL against the warehouse (requires `--db-url`).                    |
+| `execute_query(sql)`                | Run SQL against the warehouse (requires `--config`).                    |
 
 Each response includes `_meta.next_steps` — a short list guiding the agent's next tool call. This encodes the expected workflow (list → describe → find_path → build_query → execute_query) in the tool surface itself, which dramatically reduces the need for system-prompt engineering on the agent side.
 
@@ -437,7 +445,11 @@ Each response includes `_meta.next_steps` — a short list guiding the agent's n
 - `find_path()` runs BFS, early-terminating when a longer path would extend. Returns *all* shortest paths, not just one — an agent benefits from seeing alternatives (`orders → customers` vs. `orders → payments → customers`).
 - Live-DB enrichment (`get_row_count`, `get_distinct_values`, `get_date_range`, `get_sample_rows`) is implemented but not yet wired into tool outputs — future work.
 
-### 11.3 Why MCP-first matters
+### 11.3 Observability
+
+fastmcp ships native OTel support built on `opentelemetry-api` (a hard dep of fastmcp, no extras required). Every tool call automatically emits a `SERVER` span with RPC semantic conventions (`rpc.system: "mcp"`, `rpc.method`, `rpc.service`) and FastMCP-specific attributes (`fastmcp.component.type`, `fastmcp.component.key`). Spans are no-ops unless an OTel SDK is configured — installing `dbt-graphql[mcp]` and setting `OTEL_EXPORTER_OTLP_ENDPOINT` is sufficient. Distributed trace propagation via `traceparent`/`tracestate` in MCP request meta is also supported.
+
+### 11.4 Why MCP-first matters
 
 An HTTP GraphQL endpoint assumes the consumer knows what to ask. An MCP surface assumes the consumer is *learning what to ask*. The latter is the agent workflow. GraphJin added MCP in v3 and positions it as the primary agent interface; Wren Engine similarly ships an MCP server on top of its MDL; we adopt the same pattern here.
 
@@ -447,13 +459,15 @@ An HTTP GraphQL endpoint assumes the consumer knows what to ask. An MCP surface 
 
 [`src/dbt_graphql/cli.py`](../src/dbt_graphql/cli.py)
 
-Three subcommands, minimal surface area:
+Two subcommands:
 
 - **`generate`** — `extract_project()` + `format_graphql()` + `ProjectInfo.build_lineage_schema()`. Writes `db.graphql` and `lineage.json`.
-- **`serve`** — loads `db.graphql`, builds the FastAPI app via `create_app()`, runs under granian.
-- **`mcp`** — `extract_project()`, optional `DatabaseManager`, `serve_mcp()` over stdio.
+- **`serve --target TARGET`** — starts one or both interfaces depending on `--target`:
+  - `api` — loads `db.graphql`, builds the Starlette app via `create_app()`, runs under Granian (HTTP, blocks main thread).
+  - `mcp` — `extract_project()`, optional `DatabaseManager`, `serve_mcp()` over stdio (blocks main thread).
+  - `api,mcp` — MCP starts in a daemon thread, API blocks main thread.
 
-No config file format beyond the existing `db.yml` for `serve`. Everything else is flags. If a flag set grows, it's time to revisit — not today.
+No config file format beyond `config.yml`. Everything else is flags.
 
 ---
 
@@ -461,9 +475,9 @@ No config file format beyond the existing `db.yml` for `serve`. Everything else 
 
 A short list of decisions you'd only notice if you were reading the code carefully.
 
-1. **Directives encode metadata the SDL readers need.** `@sql`, `@id`, `@unique`, `@relation`, `@database`, `@schema`, `@table` — together they make `db.graphql` self-sufficient. No need to also ship `manifest.json` to production.
+1. **Directives encode metadata the SDL readers need.** `@column`, `@id`, `@unique`, `@relation`, `@table` — together they make `db.graphql` self-sufficient. No need to also ship `manifest.json` to production.
 2. **Correlated subqueries over LATERAL.** See §9.2.
-3. **PascalCase + `@sql`.** Human-readable GraphQL, exact warehouse types. See §3.4.
+3. **Standard scalars + `@column`.** Familiar GraphQL types, exact warehouse types preserved in directives. See §3.4.
 4. **Next-steps hint pattern.** See §11.1.
 5. **Enum deduplication by sorted value set.** `accepted_values(['a','b'])` on two columns becomes one enum, not two.
 6. **Read-only.** See §3.5. If this ever changes, it's a major version.
