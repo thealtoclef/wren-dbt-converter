@@ -7,7 +7,7 @@ dbt-graphql reads `catalog.json` and `manifest.json`, projects them into a Graph
 ## Features
 
 - **Generate** `db.graphql` + `lineage.json` from dbt artifacts
-- **Serve** a read-only GraphQL API over your warehouse (FastAPI + Ariadne + SQLAlchemy)
+- **Serve** a read-only GraphQL API over your warehouse (Starlette + Ariadne + SQLAlchemy)
 - **MCP server** for LLM agents with schema discovery, join-path search, query build, and execution tools
 - **Multi-warehouse**: DuckDB, PostgreSQL, MySQL/MariaDB, SQLite (anything with an async SQLAlchemy driver)
 - **Lineage-aware**: table and column lineage surfaced alongside the schema
