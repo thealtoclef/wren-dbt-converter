@@ -1,25 +1,14 @@
-"""FastAPI + Ariadne app factory for the GraphQL-to-SQL engine.
-
-Usage::
-
-    from dbt_graphql.serve.app import create_app, serve
-
-    app = create_app(db_graphql_path="db.graphql", db_url="mysql+aiomysql://...")
-    # or with config dict:
-    app = create_app(db_graphql_path="db.graphql", config={"type": "mysql", ...})
-"""
-
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 from ariadne import make_executable_schema
 from ariadne.asgi import GraphQL
 from fastapi import FastAPI
 
 from ..compiler.connection import DatabaseManager
+from ..config import DbConfig
 from ..formatter.schema import TableRegistry, load_db_graphql
 from .resolvers import create_query_type
 
@@ -71,7 +60,7 @@ def create_app(
     *,
     db_graphql_path: str | Path,
     db_url: str | None = None,
-    config: dict[str, Any] | None = None,
+    config: DbConfig | None = None,
 ) -> FastAPI:
     """Build a FastAPI app with Ariadne GraphQL mounted at ``/graphql``."""
     schema_info, registry = load_db_graphql(db_graphql_path)
@@ -108,7 +97,7 @@ def serve(
     *,
     db_graphql_path: str | Path,
     db_url: str | None = None,
-    config: dict[str, Any] | None = None,
+    config: DbConfig | None = None,
     host: str = "0.0.0.0",
     port: int = 8080,
 ) -> None:

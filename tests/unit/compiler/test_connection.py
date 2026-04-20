@@ -3,6 +3,7 @@
 import pytest
 
 from dbt_graphql.compiler.connection import build_db_url, DatabaseManager
+from dbt_graphql.config import DbConfig
 
 
 class TestBuildDbUrl:
@@ -62,7 +63,7 @@ class TestDatabaseManager:
         assert db._url == "sqlite+aiosqlite:///:memory:"
 
     def test_init_with_config(self):
-        db = DatabaseManager(config={"type": "sqlite", "host": ":memory:"})
+        db = DatabaseManager(config=DbConfig(type="sqlite", host=":memory:"))
         assert "sqlite+aiosqlite" in db._url
 
     def test_init_without_url_or_config_raises(self):

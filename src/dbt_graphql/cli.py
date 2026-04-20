@@ -146,29 +146,27 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="Path to config.yml.",
     )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="0.0.0.0",
-        help="Bind host (default: 0.0.0.0).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8080,
-        help="Bind port (default: 8080).",
-    )
 
 
 def _run_serve(args) -> None:
     from .serve import serve
-    from .compiler.connection import load_db_config
+    from .config import load_config
+
+    try:
+        config = load_config(args.config)
+    except (ValueError, Exception) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if config.serve is None:
+        print("Error: config.yml must have a 'serve:' section.", file=sys.stderr)
+        sys.exit(1)
 
     serve(
         db_graphql_path=args.db_graphql,
-        config=load_db_config(args.config),
-        host=args.host,
-        port=args.port,
+        config=config.db,
+        host=config.serve.host,
+        port=config.serve.port,
     )
 
 
@@ -222,8 +220,9 @@ def _run_mcp(args) -> None:
 
     db = None
     if args.config:
-        from .compiler.connection import DatabaseManager, load_db_config
+        from .compiler.connection import DatabaseManager
+        from .config import load_config
 
-        db = DatabaseManager(config=load_db_config(args.config))
+        db = DatabaseManager(config=load_config(args.config).db)
 
     serve_mcp(project, db=db)

@@ -7,12 +7,12 @@ this codebase entirely.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from ..config import DbConfig
 
 
 # ---------------------------------------------------------------------------
@@ -30,26 +30,12 @@ _DRIVER_MAP: dict[str, str] = {
 }
 
 
-def build_db_url(config: dict[str, Any]) -> str:
-    """Build a SQLAlchemy async URL from a config dict.
+def build_db_url(config: DbConfig | dict[str, Any]) -> str:
+    """Build a SQLAlchemy async URL from a ``DbConfig`` or equivalent dict."""
+    if isinstance(config, dict):
+        config = DbConfig.model_validate(config)
 
-    Expected keys (the ``db:`` section from ``config.yml``)::
-
-        db:
-          type: mysql        # or postgres, sqlite, doris, mariadb
-          host: localhost
-          port: 3306
-          dbname: mydb
-          user: root
-          password: secret
-
-    For SQLite::
-
-        db:
-          type: sqlite
-          host: /path/to/file.db
-    """
-    db_type = config.get("type", "").lower()
+    db_type = config.type.lower()
     scheme = _DRIVER_MAP.get(db_type)
     if scheme is None:
         supported = sorted(_DRIVER_MAP)
@@ -58,30 +44,13 @@ def build_db_url(config: dict[str, Any]) -> str:
         )
 
     if db_type == "sqlite":
-        path = config.get("host", ":memory:")
+        path = config.host or ":memory:"
         return f"{scheme}:///{path}"
 
-    host = config.get("host", "localhost")
-    port = config.get("port")
-    dbname = config.get("dbname", "")
-    user = config.get("user", "")
-    password = config.get("password", "")
-
-    auth = f"{user}:{password}" if password else user
-    if port:
-        return f"{scheme}://{auth}@{host}:{port}/{dbname}"
-    return f"{scheme}://{auth}@{host}/{dbname}"
-
-
-def load_db_config(path: str | Path) -> dict[str, Any]:
-    """Load a ``config.yml`` file and return the ``db:`` section."""
-    data = yaml.safe_load(Path(path).read_text())
-    if not isinstance(data, dict):
-        raise ValueError("config.yml must be a YAML mapping")
-    db = data.get("db")
-    if not isinstance(db, dict):
-        raise ValueError("config.yml must have a 'db:' section")
-    return db
+    auth = f"{config.user}:{config.password}" if config.password else config.user
+    if config.port:
+        return f"{scheme}://{auth}@{config.host}:{config.port}/{config.dbname}"
+    return f"{scheme}://{auth}@{config.host}/{config.dbname}"
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +67,7 @@ class DatabaseManager:
     """
 
     def __init__(
-        self, db_url: str | None = None, *, config: dict[str, Any] | None = None
+        self, db_url: str | None = None, *, config: DbConfig | None = None
     ) -> None:
         if config and not db_url:
             db_url = build_db_url(config)
