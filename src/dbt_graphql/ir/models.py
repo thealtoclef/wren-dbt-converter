@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from enum import StrEnum, auto
 
-from pydantic import BaseModel, ConfigDict, Field, constr
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +127,7 @@ class ProjectInfo(BaseModel):
         # Group column lineage by (source, target)
         grouped: dict[tuple[str, str], list[Column]] = {}
         for target, col_map in self.column_lineage.items():
-            for col_name, edges in col_map.items():
+            for _col_name, edges in col_map.items():
                 for edge in edges:
                     key = (edge["source_model"], target)
                     try:
@@ -134,9 +136,9 @@ class ProjectInfo(BaseModel):
                         lt = LineageType.unknown
                     grouped.setdefault(key, []).append(
                         Column(
-                            source_column=edge["source_column"],
-                            target_column=edge["target_column"],
-                            lineage_type=lt,
+                            source_column=edge["source_column"],  # type:ignore[ty:unknown-argument]
+                            target_column=edge["target_column"],  # type:ignore[ty:unknown-argument]
+                            lineage_type=lt,  # type:ignore[ty:unknown-argument]
                         )
                     )
 
@@ -149,10 +151,10 @@ class ProjectInfo(BaseModel):
             raise ValueError("Cannot build lineage schema: no models in project")
 
         return LineageSchema(
-            project_name=self.project_name,
-            adapter_type=self.adapter_type,
-            table_lineage=table_lineage_items,
-            column_lineage=column_lineage_items,
+            project_name=self.project_name,  # type:ignore[ty:unknown-argument]
+            adapter_type=self.adapter_type,  # type:ignore[ty:unknown-argument]
+            table_lineage=table_lineage_items,  # type:ignore[ty:unknown-argument]
+            column_lineage=column_lineage_items,  # type:ignore[ty:unknown-argument]
         )
 
 
@@ -166,10 +168,10 @@ class TableLineageItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True)
 
-    source: constr(min_length=1) = Field(
+    source: Annotated[str, StringConstraints(min_length=1)] = Field(
         ..., description="The upstream (feeding) model name."
     )
-    target: constr(min_length=1) = Field(
+    target: Annotated[str, StringConstraints(min_length=1)] = Field(
         ..., description="The downstream (consuming) model name."
     )
 
@@ -190,10 +192,10 @@ class Column(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True)
 
-    source_column: constr(min_length=1) = Field(
+    source_column: Annotated[str, StringConstraints(min_length=1)] = Field(
         ..., alias="sourceColumn", description="Column name in the source model."
     )
-    target_column: constr(min_length=0) = Field(
+    target_column: Annotated[str, StringConstraints(min_length=0)] = Field(
         ...,
         alias="targetColumn",
         description="Column name in the target model. Empty for structural edges (filter/join/unknown).",
@@ -210,10 +212,10 @@ class ColumnLineageItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True)
 
-    source: constr(min_length=1) = Field(
+    source: Annotated[str, StringConstraints(min_length=1)] = Field(
         ..., description="The upstream (feeding) model name."
     )
-    target: constr(min_length=1) = Field(
+    target: Annotated[str, StringConstraints(min_length=1)] = Field(
         ..., description="The downstream (consuming) model name."
     )
     columns: list[Column] = Field(..., description="Column-level lineage mappings.")

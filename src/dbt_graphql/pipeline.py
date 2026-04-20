@@ -139,11 +139,11 @@ def extract_project(
                 name=model_name,
                 alias=model_alias,
                 database=database,
-                schema_=schema,
+                schema_=schema,  # type: ignore[ty:unknown-argument]
                 columns=columns,
                 primary_keys=pk_cols,
                 description=description,
-            )
+            )  # type: ignore[ty:missing-argument]
         )
 
     # 7. Build relationships (merge: constraints > data_tests > compiled_sql)

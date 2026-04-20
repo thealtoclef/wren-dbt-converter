@@ -90,7 +90,7 @@ def _directive_args(directive: DirectiveNode) -> dict[str, str]:
     """Flatten a directive's keyword arguments into a plain dict."""
     out: dict[str, str] = {}
     for arg in directive.arguments or []:
-        out[arg.name.value] = arg.value.value  # type: ignore[assignment]
+        out[arg.name.value] = arg.value.value  # type: ignore[ty:unresolved-attribute]
     return out
 
 

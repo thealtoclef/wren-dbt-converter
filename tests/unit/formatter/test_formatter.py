@@ -66,7 +66,7 @@ class TestTypeMapping:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
 
         c = ColumnInfo(name="id", type="INTEGER", not_null=True)
         line = _column_line(m, c, rel_map={})
@@ -82,7 +82,7 @@ class TestTypeMapping:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
 
         c = ColumnInfo(name="ts", type="TIMESTAMP WITH TIME ZONE", not_null=False)
         line = _column_line(m, c, rel_map={})
@@ -93,7 +93,7 @@ class TestTypeMapping:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
 
         c = ColumnInfo(name="tags", type="TEXT[]", not_null=False)
         line = _column_line(m, c, rel_map={})
@@ -104,7 +104,7 @@ class TestTypeMapping:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
 
         c = ColumnInfo(name="items", type="ARRAY<STRING>", not_null=False)
         line = _column_line(m, c, rel_map={})
@@ -115,7 +115,7 @@ class TestTypeMapping:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
         c = ColumnInfo(name="x", type="", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "x: String" in line
@@ -179,8 +179,12 @@ class TestColumnDirectives:
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
         m = ModelInfo(
-            name="t", database="db", schema_="public", columns=[], primary_keys=["id"]
-        )
+            name="t",
+            database="db",
+            schema_="public",  # type: ignore[ty:unknown-argument]
+            columns=[],
+            primary_keys=["id"],
+        )  # type: ignore[ty:missing-argument]
         c = ColumnInfo(name="id", type="INTEGER", not_null=True)
         line = _column_line(m, c, rel_map={})
         assert "@id" in line
@@ -192,10 +196,10 @@ class TestColumnDirectives:
         m = ModelInfo(
             name="t",
             database="db",
-            schema_="public",
+            schema_="public",  # type: ignore[ty:unknown-argument]
             columns=[],
             primary_keys=["order_id", "item_id"],
-        )
+        )  # type: ignore[ty:missing-argument]
         for col_name in ("order_id", "item_id"):
             c = ColumnInfo(name=col_name, type="INTEGER", not_null=True)
             line = _column_line(m, c, rel_map={})
@@ -207,7 +211,7 @@ class TestColumnDirectives:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
         c = ColumnInfo(name="email", type="VARCHAR", not_null=False, unique=True)
         line = _column_line(m, c, rel_map={})
         assert "@unique" in line
@@ -217,8 +221,12 @@ class TestColumnDirectives:
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
         m = ModelInfo(
-            name="t", database="db", schema_="public", columns=[], primary_keys=["id"]
-        )
+            name="t",
+            database="db",
+            schema_="public",  # type: ignore[ty:unknown-argument]
+            columns=[],
+            primary_keys=["id"],
+        )  # type: ignore[ty:missing-argument]
         c = ColumnInfo(name="id", type="INTEGER", not_null=True, unique=True)
         line = _column_line(m, c, rel_map={})
         assert "@id" in line
@@ -228,7 +236,7 @@ class TestColumnDirectives:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="t", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
         c = ColumnInfo(name="price", type="NUMERIC(10,2)", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert '@sql(type: "NUMERIC", size: "10,2")' in line
@@ -237,7 +245,7 @@ class TestColumnDirectives:
         from dbt_graphql.formatter.graphql import _column_line
         from dbt_graphql.ir.models import ColumnInfo, ModelInfo
 
-        m = ModelInfo(name="orders", database="db", schema_="public", columns=[])
+        m = ModelInfo(name="orders", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
         c = ColumnInfo(name="customer_id", type="INTEGER", not_null=True)
         rel_map = {("orders", "customer_id"): ("customers", "customer_id")}
         line = _column_line(m, c, rel_map=rel_map)
