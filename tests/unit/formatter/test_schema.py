@@ -4,24 +4,24 @@ from dbt_graphql.formatter.schema import parse_db_graphql
 
 
 SDL = """\
-type customers @database(name: mydb) @schema(name: main) @table(name: customers) {
-  customer_id: Integer! @sql(type: "INTEGER") @unique
-  first_name: Varchar @sql(type: "VARCHAR")
-  last_name: Varchar @sql(type: "VARCHAR")
+type customers @table(database: mydb, schema: main, name: customers) {
+  customer_id: Integer! @column(type: "INTEGER") @unique
+  first_name: Varchar @column(type: "VARCHAR")
+  last_name: Varchar @column(type: "VARCHAR")
 }
 
-type orders @database(name: mydb) @schema(name: main) @table(name: orders) {
-  order_id: Integer! @sql(type: "INTEGER") @id
-  customer_id: Integer! @sql(type: "INTEGER") @relation(type: customers, field: customer_id)
-  order_date: Date @sql(type: "DATE")
-  status: Varchar @sql(type: "VARCHAR")
-  tags: [Text] @sql(type: "TEXT[]")
-  amount: Varchar @sql(type: "VARCHAR", size: "255")
+type orders @table(database: mydb, schema: main, name: orders) {
+  order_id: Integer! @column(type: "INTEGER") @id
+  customer_id: Integer! @column(type: "INTEGER") @relation(type: customers, field: customer_id)
+  order_date: Date @column(type: "DATE")
+  status: Varchar @column(type: "VARCHAR")
+  tags: [Text] @column(type: "TEXT[]")
+  amount: Varchar @column(type: "VARCHAR", size: "255")
 }
 
-type payments @database(name: mydb) @schema(name: main) @table(name: payments) {
-  payment_id: Integer! @sql(type: "INTEGER")
-  secret: Text @sql(type: "TEXT")
+type payments @table(database: mydb, schema: main, name: payments) {
+  payment_id: Integer! @column(type: "INTEGER")
+  secret: Text @column(type: "TEXT")
 }
 """
 
@@ -49,8 +49,8 @@ class TestTableParsing:
         assert info.tables[0].table == "customers"
 
     def test_table_defaults_to_name(self):
-        """If @table is missing, table name defaults to the type name."""
-        sdl = "type foo @database(name: db) @schema(name: public) { id: Integer }"
+        """If @table name arg is absent, table name defaults to the type name."""
+        sdl = "type foo @table(database: db, schema: public) { id: Integer }"
         info, _ = parse_db_graphql(sdl)
         assert info.tables[0].table == "foo"
 

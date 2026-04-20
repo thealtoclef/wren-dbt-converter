@@ -4,7 +4,7 @@ Produces:
 - db.graphql: GraphQL SDL schema used by the query compiler.
 
 Column types are mapped to standard GraphQL scalars (Int, Float, Boolean, String).
-The exact SQL type is always preserved in an ``@sql(type: "...")`` directive so the
+The exact SQL type is always preserved in an ``@column(type: "...")`` directive so the
 compiler never needs to parse the GraphQL type name back into SQL.
 """
 
@@ -146,9 +146,7 @@ def _type_block(
 ) -> str:
     """Build a GraphQL SDL type block for a dbt model."""
     type_directives: list[str] = [
-        f"@database(name: {model.database})",
-        f"@schema(name: {model.schema_})",
-        f"@table(name: {model.relation_name})",
+        f'@table(database: "{model.database}", schema: "{model.schema_}", name: "{model.relation_name}")',
     ]
 
     header = f"type {model.name} " + " ".join(type_directives) + " {"
@@ -174,7 +172,7 @@ def _column_line(
     sql_args = f'type: "{base}"'
     if size:
         sql_args += f', size: "{size}"'
-    directives: list[str] = [f"@sql({sql_args})"]
+    directives: list[str] = [f"@column({sql_args})"]
     is_sole_pk = len(model.primary_keys) == 1 and col.name in model.primary_keys
     if is_sole_pk:
         directives.append("@id")

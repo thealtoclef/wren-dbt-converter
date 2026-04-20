@@ -92,9 +92,8 @@ def _default_json_build_obj(element, compiler, **kw):
 
 
 def _table_from_def(tdef: TableDef):
-    """Create an ad-hoc SQLAlchemy ``TableClause`` for FROM clauses."""
     cols = [Column(c.name) for c in tdef.columns]
-    return table(tdef.table, *cols)
+    return table(tdef.table, *cols, schema=tdef.schema or None)
 
 
 def _extract_scalar_fields(
@@ -128,6 +127,7 @@ def _build_correlated_subquery(
     target: TableDef,
     child_fields: list,
     registry: TableRegistry,
+    dialect: str = "",
     depth: int = 1,
     visited: frozenset[str] = frozenset(),
     max_depth: int | None = None,
@@ -171,6 +171,7 @@ def _build_correlated_subquery(
             target=child_target,
             child_fields=child_field_node.selection_set.selections,
             registry=registry,
+            dialect=dialect,
             depth=depth + 1,
             visited=new_visited,
             max_depth=max_depth,
@@ -197,6 +198,7 @@ def compile_query(
     tdef: TableDef,
     field_nodes: list,
     registry: TableRegistry,
+    dialect: str = "",
     limit: int | None = None,
     offset: int | None = None,
     where: dict[str, object] | None = None,
@@ -240,6 +242,7 @@ def compile_query(
             target=target,
             child_fields=child_fields,
             registry=registry,
+            dialect=dialect,
             max_depth=max_depth,
         )
         cols.append(subquery.label(col.name))

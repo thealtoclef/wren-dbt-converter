@@ -131,7 +131,7 @@ def _parse_column(field_node: FieldDefinitionNode) -> ColumnDef:
             col.is_pk = True
         elif dname == "unique":
             col.is_unique = True
-        elif dname == "sql":
+        elif dname == "column":
             args = _directive_args(directive)
             col.sql_type = args.get("type", "")
             col.sql_size = args.get("size", "")
@@ -163,12 +163,9 @@ def parse_db_graphql(sdl: str) -> tuple[SchemaInfo, TableRegistry]:
 
         for directive in defn.directives or []:
             args = _directive_args(directive)
-            dname = directive.name.value
-            if dname == "database":
-                table.database = args.get("name", "")
-            elif dname == "schema":
-                table.schema = args.get("name", "")
-            elif dname == "table":
+            if directive.name.value == "table":
+                table.database = args.get("database", "")
+                table.schema = args.get("schema", "")
                 table.table = args.get("name", "")
 
         if not table.table:

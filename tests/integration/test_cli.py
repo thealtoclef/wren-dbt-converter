@@ -11,8 +11,6 @@ MANIFEST = FIXTURES_DIR / "manifest.json"
 def _cli_graphql_args():
     return [
         "generate",
-        "--format",
-        "graphql",
         "--catalog",
         str(CATALOG),
         "--manifest",
@@ -60,9 +58,9 @@ def test_cli_exclude_multiple_patterns(tmp_path):
     assert "type customers" in content
 
 
-def test_cli_no_format_exits():
+def test_cli_missing_artifacts_exits():
     with pytest.raises(SystemExit):
-        main(["generate", "--catalog", "/dev/null", "--manifest", "/dev/null"])
+        main(["generate"])
 
 
 def test_cli_default_output_is_cwd(monkeypatch, tmp_path):
@@ -92,8 +90,6 @@ def test_cli_missing_catalog_exits_nonzero(tmp_path):
         main(
             [
                 "generate",
-                "--format",
-                "graphql",
                 "--catalog",
                 str(tmp_path / "no_catalog.json"),
                 "--manifest",
@@ -110,8 +106,6 @@ def test_cli_missing_manifest_exits_nonzero(tmp_path):
         main(
             [
                 "generate",
-                "--format",
-                "graphql",
                 "--catalog",
                 str(CATALOG),
                 "--manifest",

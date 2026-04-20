@@ -46,6 +46,7 @@ def _make_resolver(table_name: str):
             tdef=tdef,
             field_nodes=info.field_nodes,
             registry=ctx["registry"],
+            dialect=ctx["db"].dialect_name,
             limit=kwargs.get("limit"),
             offset=kwargs.get("offset"),
             where=kwargs.get("where"),

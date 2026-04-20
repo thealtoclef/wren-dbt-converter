@@ -29,7 +29,7 @@ _STANDARD_GQL_SCALARS = {"String", "Int", "Float", "Boolean", "ID"}
 def _build_ariadne_sdl(registry: TableRegistry) -> str:
     """Build a standard GraphQL SDL (without db.graphql custom directives) for Ariadne.
 
-    The db.graphql format uses custom directives (@sql, @database, @relation, etc.)
+    The db.graphql format uses custom directives (@table, @column, @relation, etc.)
     that Ariadne's schema builder doesn't understand. This function builds a clean
     SDL with custom types declared as scalars, per-table WhereInput types, and a
     Query type for all tables.

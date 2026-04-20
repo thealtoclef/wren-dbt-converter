@@ -53,15 +53,15 @@ def db_graphql_file(tmp_path_factory) -> Path:
     """Minimal db.graphql SDL matching the SQLite test database."""
     path = tmp_path_factory.mktemp("serve_schema") / "db.graphql"
     path.write_text(
-        'type users @database(name: "test") @schema(name: "main") @table(name: "users") {\n'
-        '  id: Int! @sql(type: "INTEGER") @id\n'
-        '  name: String! @sql(type: "TEXT")\n'
+        'type users @table(name: "users") {\n'
+        '  id: Int! @column(type: "INTEGER") @id\n'
+        '  name: String! @column(type: "TEXT")\n'
         "}\n"
         "\n"
-        'type posts @database(name: "test") @schema(name: "main") @table(name: "posts") {\n'
-        '  id: Int! @sql(type: "INTEGER") @id\n'
-        '  user_id: Int @sql(type: "INTEGER")\n'
-        '  title: String @sql(type: "TEXT")\n'
+        'type posts @table(name: "posts") {\n'
+        '  id: Int! @column(type: "INTEGER") @id\n'
+        '  user_id: Int @column(type: "INTEGER")\n'
+        '  title: String @column(type: "TEXT")\n'
         "}\n"
     )
     return path

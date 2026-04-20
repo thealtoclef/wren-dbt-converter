@@ -46,7 +46,7 @@ class TestDbGraphQL:
         project = _make_project()
         gj = format_graphql(project)
         if any(m.schema_ and m.schema_ != "public" for m in project.models):
-            assert "@schema(name:" in gj.db_graphql
+            assert "@table(" in gj.db_graphql
 
     def test_exclude_patterns(self):
         project = _make_project(exclude_patterns=[r"^stg_"])
@@ -71,12 +71,12 @@ class TestTypeMapping:
         c = ColumnInfo(name="id", type="INTEGER", not_null=True)
         line = _column_line(m, c, rel_map={})
         assert "id: Int!" in line
-        assert '@sql(type: "INTEGER")' in line
+        assert '@column(type: "INTEGER")' in line
 
         c = ColumnInfo(name="name", type="VARCHAR(255)", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "name: String" in line
-        assert '@sql(type: "VARCHAR", size: "255")' in line
+        assert '@column(type: "VARCHAR", size: "255")' in line
 
     def test_multiword_types(self):
         from dbt_graphql.formatter.graphql import _column_line
@@ -87,7 +87,7 @@ class TestTypeMapping:
         c = ColumnInfo(name="ts", type="TIMESTAMP WITH TIME ZONE", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "ts: String" in line
-        assert '@sql(type: "TIMESTAMP WITH TIME ZONE")' in line
+        assert '@column(type: "TIMESTAMP WITH TIME ZONE")' in line
 
     def test_array_type(self):
         from dbt_graphql.formatter.graphql import _column_line
@@ -98,7 +98,7 @@ class TestTypeMapping:
         c = ColumnInfo(name="tags", type="TEXT[]", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "tags: [String]" in line
-        assert '@sql(type: "TEXT")' in line
+        assert '@column(type: "TEXT")' in line
 
     def test_bigquery_array(self):
         from dbt_graphql.formatter.graphql import _column_line
@@ -109,7 +109,7 @@ class TestTypeMapping:
         c = ColumnInfo(name="items", type="ARRAY<STRING>", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "items: [String]" in line
-        assert '@sql(type: "STRING")' in line
+        assert '@column(type: "STRING")' in line
 
     def test_empty_type_falls_back_to_string(self):
         from dbt_graphql.formatter.graphql import _column_line
@@ -119,7 +119,7 @@ class TestTypeMapping:
         c = ColumnInfo(name="x", type="", not_null=False)
         line = _column_line(m, c, rel_map={})
         assert "x: String" in line
-        assert '@sql(type: "")' in line
+        assert '@column(type: "")' in line
 
 
 class TestParseSqlType:
@@ -239,7 +239,7 @@ class TestColumnDirectives:
         m = ModelInfo(name="t", database="db", schema_="public", columns=[])  # type: ignore[ty:unknown-argument,ty:missing-argument]
         c = ColumnInfo(name="price", type="NUMERIC(10,2)", not_null=False)
         line = _column_line(m, c, rel_map={})
-        assert '@sql(type: "NUMERIC", size: "10,2")' in line
+        assert '@column(type: "NUMERIC", size: "10,2")' in line
 
     def test_relation_directive(self):
         from dbt_graphql.formatter.graphql import _column_line
