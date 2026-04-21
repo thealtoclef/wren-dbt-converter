@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 
-def configure_telemetry(service_name: str = "dbt-graphql") -> None:
-    """Bootstrap the OTel SDK from standard environment variables.
+def configure_telemetry(
+    service_name: str = "dbt-graphql",
+    exporter: str = "otlp",
+    endpoint: str | None = None,
+) -> None:
+    """Bootstrap the OTel SDK from config.yml values (telemetry section).
 
-    Reads:
-      OTEL_EXPORTER_OTLP_ENDPOINT  — OTLP collector endpoint
-      OTEL_SERVICE_NAME            — overrides the service_name argument
-      OTEL_TRACES_EXPORTER         — "otlp" (default) or "console"
-
-    No-op if opentelemetry-sdk is not installed or OTLP exporter is unavailable.
+    No-op if opentelemetry-sdk is not installed or the [api] extra is absent.
     """
     try:
         from opentelemetry import trace
@@ -19,15 +18,10 @@ def configure_telemetry(service_name: str = "dbt-graphql") -> None:
     except ImportError:
         return
 
-    import os
-
-    service = os.environ.get("OTEL_SERVICE_NAME", service_name)
-    resource = Resource({SERVICE_NAME: service})
+    resource = Resource({SERVICE_NAME: service_name})
     provider = TracerProvider(resource=resource)
 
-    exporter_name = os.environ.get("OTEL_TRACES_EXPORTER", "otlp")
-
-    if exporter_name == "console":
+    if exporter == "console":
         from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -37,7 +31,10 @@ def configure_telemetry(service_name: str = "dbt-graphql") -> None:
                 OTLPSpanExporter,
             )
 
-            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+            exporter_instance = (
+                OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
+            )
+            provider.add_span_processor(BatchSpanProcessor(exporter_instance))
         except ImportError:
             return
 

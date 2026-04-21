@@ -20,9 +20,16 @@ class ServeConfig(BaseModel):
     port: int
 
 
+class TelemetryConfig(BaseModel):
+    service_name: str = "dbt-graphql"
+    exporter: str = "otlp"
+    endpoint: str | None = None
+
+
 class AppConfig(BaseModel):
     db: DbConfig
     serve: ServeConfig | None = None
+    telemetry: TelemetryConfig = TelemetryConfig()
 
 
 def load_config(path: str | Path) -> AppConfig:

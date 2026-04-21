@@ -186,9 +186,26 @@ def _parse_targets(raw: str) -> set[str]:
 
 
 def _run_serve(args) -> None:
+    from .config import load_config
     from .telemetry import configure_telemetry
 
-    configure_telemetry()
+    config = None
+    if args.config:
+        try:
+            config = load_config(args.config)
+        except (ValueError, Exception) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    if config is not None:
+        tel = config.telemetry
+        configure_telemetry(
+            service_name=tel.service_name,
+            exporter=tel.exporter,
+            endpoint=tel.endpoint,
+        )
+    else:
+        configure_telemetry()
 
     targets = _parse_targets(args.target)
 
@@ -210,11 +227,10 @@ def _run_serve(args) -> None:
 
     # Build shared db connection for mcp (if config provided)
     db = None
-    if "mcp" in targets and args.config:
+    if "mcp" in targets and config is not None:
         from .compiler.connection import DatabaseManager
-        from .config import load_config
 
-        db = DatabaseManager(config=load_config(args.config).db)
+        db = DatabaseManager(config=config.db)
 
     # Start MCP in a daemon thread when serving both, so the API can block main
     if "mcp" in targets:
@@ -246,13 +262,8 @@ def _run_serve(args) -> None:
 
     if "api" in targets:
         from .api import serve
-        from .config import load_config
 
-        try:
-            config = load_config(args.config)
-        except (ValueError, Exception) as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+        assert config is not None  # guaranteed by validation above
 
         if config.serve is None:
             print("Error: config.yml must have a 'serve:' section.", file=sys.stderr)
