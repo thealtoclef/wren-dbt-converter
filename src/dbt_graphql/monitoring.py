@@ -6,6 +6,7 @@ def configure_monitoring(
     exporter: str = "otlp",
     endpoint: str | None = None,
     log_level: str = "INFO",
+    protocol: str = "grpc",
 ) -> None:
     """Bootstrap the OTel SDK from config.yml values (monitoring section).
 
@@ -33,9 +34,14 @@ def configure_monitoring(
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
     else:
         try:
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter,
-            )
+            if protocol == "http":
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                    OTLPSpanExporter,
+                )
+            else:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                    OTLPSpanExporter,
+                )
 
             exporter_instance = (
                 OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()

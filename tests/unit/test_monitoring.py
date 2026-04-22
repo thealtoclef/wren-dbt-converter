@@ -57,7 +57,7 @@ class TestConfigureMonitoring:
 
         console_exporter_cls.assert_called_once()
 
-    def test_otlp_exporter_used_by_default(self):
+    def test_otlp_grpc_exporter_used_by_default(self):
         mocks = _make_otel_mocks()
         otlp_exporter_cls = MagicMock()
         otlp_mod = MagicMock()
@@ -76,6 +76,26 @@ class TestConfigureMonitoring:
             tel.configure_monitoring()
 
         otlp_exporter_cls.assert_called_once_with()
+
+    def test_otlp_http_exporter_used_when_configured(self):
+        mocks = _make_otel_mocks()
+        otlp_exporter_cls = MagicMock()
+        otlp_mod = MagicMock()
+        otlp_mod.OTLPSpanExporter = otlp_exporter_cls
+        mocks["opentelemetry.exporter"] = MagicMock()
+        mocks["opentelemetry.exporter.otlp"] = MagicMock()
+        mocks["opentelemetry.exporter.otlp.proto"] = MagicMock()
+        mocks["opentelemetry.exporter.otlp.proto.http"] = MagicMock()
+        mocks["opentelemetry.exporter.otlp.proto.http.trace_exporter"] = otlp_mod
+
+        with patch.dict("sys.modules", mocks):
+            from importlib import reload
+            import dbt_graphql.monitoring as tel
+
+            reload(tel)
+            tel.configure_monitoring(protocol="http", endpoint="http://collector:4318")
+
+        otlp_exporter_cls.assert_called_once_with(endpoint="http://collector:4318")
 
     def test_otlp_exporter_receives_endpoint(self):
         mocks = _make_otel_mocks()
