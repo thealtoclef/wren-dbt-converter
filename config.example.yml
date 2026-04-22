@@ -1,0 +1,19 @@
+db:
+  type: postgres      # postgres | mysql | mariadb | sqlite | duckdb | doris
+  host: localhost
+  port: 5432
+  dbname: mydb
+  user: alice
+  password: secret
+
+serve:
+  host: 0.0.0.0
+  port: 8080
+
+# Optional — remove this block if you don't use OpenTelemetry
+monitoring:
+  log_level: info
+  service_name: dbt-graphql
+  exporter: otlp          # otlp | console
+  endpoint: http://localhost:4317
+  protocol: grpc          # grpc | http
