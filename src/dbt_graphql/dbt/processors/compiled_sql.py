@@ -63,9 +63,9 @@ def build_table_lookup(manifest: DbtManifest) -> dict[str, str]:
         if relation_name:
             lookup[normalize_table_relation_name(relation_name)] = model_name
 
-        database = getattr(node, "database", None) or ""
-        schema = getattr(node, "schema_", None) or ""
-        alias = getattr(node, "alias", None) or getattr(node, "name", None) or ""
+        database = node.database
+        schema = node.schema_
+        alias = node.alias or node.name
         if database and schema and alias:
             lookup[normalize_table_relation_name(f"{database}.{schema}.{alias}")] = (
                 model_name
@@ -75,7 +75,7 @@ def build_table_lookup(manifest: DbtManifest) -> dict[str, str]:
 
     allowed = {"model", "source", "seed", "snapshot"}
     for node_id, node in manifest.nodes.items():
-        if getattr(node, "resource_type", None) in allowed:
+        if node.resource_type in allowed:
             _add_node(node_id, node)
 
     sources = getattr(manifest, "sources", None) or {}
@@ -94,9 +94,9 @@ def build_schema_for_model(
     schema: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
 
     depends_on = getattr(model_node, "depends_on", None)
-    parent_ids = list(getattr(depends_on, "nodes", None) or [])
+    parent_ids = list(depends_on.nodes) if depends_on else []
 
-    catalog_nodes = dict(getattr(catalog, "nodes", None) or {})
+    catalog_nodes = dict(catalog.nodes)
     catalog_sources = dict(getattr(catalog, "sources", None) or {})
 
     for parent_id in parent_ids:
@@ -128,7 +128,9 @@ _ADAPTER_TO_DIALECT = {
 
 def detect_dialect(manifest: DbtManifest) -> str:
     """Map manifest ``adapter_type`` to a sqlglot dialect name."""
-    adapter_type: str = getattr(manifest.metadata, "adapter_type", None) or ""
+    adapter_type = manifest.metadata.adapter_type
+    if not adapter_type:
+        raise ValueError("manifest.metadata.adapter_type is missing or empty")
     return _ADAPTER_TO_DIALECT.get(adapter_type, adapter_type)
 
 
@@ -151,7 +153,7 @@ def qualify_model_sql(sql: str, dialect: str, schema: dict) -> Scope | None:
     except SqlglotError as e:
         logger.debug("sqlglot processing failed (%s): %s", dialect, e)
         return None
-    except Exception as e:  # Compiled user SQL can trigger unexpected internal errors
+    except (ValueError, TypeError, AttributeError) as e:
         logger.warning("unexpected error processing SQL (%s): %s", dialect, e)
         return None
 

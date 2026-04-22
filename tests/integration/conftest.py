@@ -1,12 +1,10 @@
-"""Shared fixtures for GraphQL integration tests.
-
-Uses the jaffle-shop dbt project with duckdb adapter.
-"""
+"""Shared fixtures for integration tests across DuckDB, PostgreSQL, and MySQL."""
 
 from __future__ import annotations
 
 import asyncio
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -18,41 +16,184 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 JAFFLE = FIXTURES / "jaffle-shop"
 PROFILES_DIR = FIXTURES / "dbt-profiles"
 
+_ADAPTER_PKG = {
+    "duckdb": "dbt-duckdb",
+    "postgres": "dbt-postgres",
+    "mysql": "dbt-mysql",
+}
+
+_DRIVER_MODULE = {
+    "duckdb": "duckdb_engine",
+    "postgres": "asyncpg",
+    "mysql": "aiomysql",
+}
+
+_ASYNC_URL = {
+    "postgres": "postgresql+asyncpg://jaffle:jaffle@localhost:5433/jaffle_shop",
+    "mysql": "mysql+aiomysql://jaffle:jaffle@localhost:3307/jaffle_shop",
+}
+
 
 # ---------------------------------------------------------------------------
-# Sync DB wrapper for duckdb
+# DB adapter wrappers
 # ---------------------------------------------------------------------------
 
 
 class SyncDBConnection:
-    """Wraps a sync SQLAlchemy engine for async use via run_in_executor."""
+    """Sync SQLAlchemy engine wrapped for async use (DuckDB)."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str) -> None:
         from sqlalchemy import create_engine
 
         self._engine = create_engine(url)
 
+    @property
+    def dialect_name(self) -> str:
+        return self._engine.dialect.name
+
     async def execute(self, query) -> list[dict[str, Any]]:
+        from sqlalchemy import text
+
         loop = asyncio.get_running_loop()
+        # Accept both text strings and SQLAlchemy selectables
+        if isinstance(query, str):
+            query = text(query)
 
-        def _sync_exec():
+        def _run():
             with self._engine.connect() as conn:
-                result = conn.execute(query)
-                return [dict(row._mapping) for row in result]
+                return [dict(row._mapping) for row in conn.execute(query)]
 
-        return await loop.run_in_executor(None, _sync_exec)
+        return await loop.run_in_executor(None, _run)
 
-    async def close(self):
+    async def execute_text(self, sql: str) -> list[dict[str, Any]]:
+        return await self.execute(sql)
+
+    async def close(self) -> None:
         self._engine.dispose()
 
 
+class AsyncDBConnection:
+    """Async DatabaseManager wrapper (PostgreSQL, MySQL)."""
+
+    def __init__(self, db_url: str) -> None:
+        from dbt_graphql.compiler.connection import DatabaseManager
+
+        self._mgr = DatabaseManager(db_url=db_url)
+        self._url = db_url
+
+    @property
+    def dialect_name(self) -> str:
+        # Extract from URL: "mysql+aiomysql://..." → "mysql"
+        scheme = self._url.split("://")[0]
+        return scheme.split("+")[0]
+
+    async def connect(self) -> None:
+        await self._mgr.connect()
+
+    async def execute(self, query) -> list[dict[str, Any]]:
+        return await self._mgr.execute(query)
+
+    async def execute_text(self, sql: str) -> list[dict[str, Any]]:
+        return await self._mgr.execute_text(sql)
+
+    async def close(self) -> None:
+        await self._mgr.close()
+
+
 # ---------------------------------------------------------------------------
-# Isolated dbt venv for duckdb
+# Adapter environment bundle
 # ---------------------------------------------------------------------------
 
 
-def _create_dbt_venv(venv_dir: Path) -> Path:
-    """Create an isolated venv with dbt-core + dbt-duckdb. Returns dbt bin path."""
+class AdapterEnv:
+    """Bundles project info + DB connection + registry for one adapter."""
+
+    def __init__(
+        self,
+        name: str,
+        project,
+        db,
+        registry,
+        db_graphql: str,
+    ) -> None:
+        self.name = name
+        self.project = project
+        self.db = db
+        self.registry = registry
+        self.db_graphql = db_graphql
+
+    @property
+    def db_url(self) -> str | None:
+        return _ASYNC_URL.get(self.name)
+
+
+# ---------------------------------------------------------------------------
+# Cached derived data (project + registry + graphql per adapter)
+# ---------------------------------------------------------------------------
+
+
+_adapter_cache: dict[str, dict] = {}
+
+
+def _get_adapter_data(name: str, artifacts: dict) -> dict:
+    if name not in _adapter_cache:
+        from dbt_graphql.formatter.graphql import format_graphql
+        from dbt_graphql.formatter.schema import parse_db_graphql
+        from dbt_graphql.pipeline import extract_project
+
+        project = extract_project(artifacts["catalog_path"], artifacts["manifest_path"])
+        result = format_graphql(project)
+        _, registry = parse_db_graphql(result.db_graphql)
+        _adapter_cache[name] = {
+            "project": project,
+            "registry": registry,
+            "db_graphql": result.db_graphql,
+        }
+    return _adapter_cache[name]
+
+
+# ---------------------------------------------------------------------------
+# Docker fixtures (pytest-docker)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def docker_compose_file():
+    return str(FIXTURES / "docker-compose.yml")
+
+
+def _tcp_check(host: str, port: int):
+    def check():
+        try:
+            s = socket.create_connection((host, port), timeout=1)
+            s.close()
+            return True
+        except OSError:
+            return False
+
+    return check
+
+
+@pytest.fixture(scope="session")
+def postgres_service(docker_services):
+    docker_services.wait_until_responsive(
+        timeout=30.0, pause=1.0, check=_tcp_check("localhost", 5433)
+    )
+
+
+@pytest.fixture(scope="session")
+def mysql_service(docker_services):
+    docker_services.wait_until_responsive(
+        timeout=30.0, pause=1.0, check=_tcp_check("localhost", 3307)
+    )
+
+
+# ---------------------------------------------------------------------------
+# dbt project building
+# ---------------------------------------------------------------------------
+
+
+def _create_dbt_venv(venv_dir: Path, adapter: str) -> Path:
     if (venv_dir / "bin" / "dbt").exists():
         return venv_dir / "bin" / "dbt"
 
@@ -71,7 +212,7 @@ def _create_dbt_venv(venv_dir: Path) -> Path:
             "--python",
             str(venv_dir / "bin" / "python"),
             "dbt-core",
-            "dbt-duckdb",
+            _ADAPTER_PKG[adapter],
         ],
         check=True,
         capture_output=True,
@@ -82,11 +223,9 @@ def _create_dbt_venv(venv_dir: Path) -> Path:
 
 
 def _run_dbt(dbt_bin: Path, project_dir: Path, profiles_dir: Path) -> None:
-    """Run dbt seed + run + docs generate using the adapter-specific dbt."""
     env = {"DBT_PROFILES_DIR": str(profiles_dir)}
     for cmd in [
-        [str(dbt_bin), "seed", "--full-refresh"],
-        [str(dbt_bin), "run", "--full-refresh"],
+        [str(dbt_bin), "build", "--full-refresh"],
         [str(dbt_bin), "docs", "generate"],
     ]:
         result = subprocess.run(
@@ -104,18 +243,19 @@ def _run_dbt(dbt_bin: Path, project_dir: Path, profiles_dir: Path) -> None:
             )
 
 
-def _build_duckdb_project(venvs_dir: Path, projects_dir: Path) -> dict[str, Path]:
-    """Create venv, copy project, run dbt, return artifact paths."""
-    dbt_bin = _create_dbt_venv(venvs_dir / "duckdb")
+def _build_dbt_project(
+    adapter: str, venvs_dir: Path, projects_dir: Path
+) -> dict[str, Path]:
+    dbt_bin = _create_dbt_venv(venvs_dir / adapter, adapter)
 
-    project_dir = projects_dir / "duckdb"
+    project_dir = projects_dir / adapter
     if project_dir.exists():
         shutil.rmtree(project_dir)
     shutil.copytree(JAFFLE, project_dir)
 
     profiles_subdir = project_dir / "profiles"
     profiles_subdir.mkdir(exist_ok=True)
-    shutil.copy(PROFILES_DIR / "duckdb.yml", profiles_subdir / "profiles.yml")
+    shutil.copy(PROFILES_DIR / f"{adapter}.yml", profiles_subdir / "profiles.yml")
 
     _run_dbt(dbt_bin, project_dir, profiles_subdir)
 
@@ -128,38 +268,84 @@ def _build_duckdb_project(venvs_dir: Path, projects_dir: Path) -> dict[str, Path
 
 
 # ---------------------------------------------------------------------------
-# Session-scoped: build duckdb project
+# Session-scoped artifact fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
-def duckdb_project(tmp_path_factory):
-    return _build_duckdb_project(
+def duckdb_artifacts(tmp_path_factory):
+    return _build_dbt_project(
+        "duckdb",
+        tmp_path_factory.mktemp("dbt-envs"),
+        tmp_path_factory.mktemp("e2e"),
+    )
+
+
+@pytest.fixture(scope="session")
+def postgres_artifacts(tmp_path_factory, postgres_service):
+    return _build_dbt_project(
+        "postgres",
+        tmp_path_factory.mktemp("dbt-envs"),
+        tmp_path_factory.mktemp("e2e"),
+    )
+
+
+@pytest.fixture(scope="session")
+def mysql_artifacts(tmp_path_factory, mysql_service):
+    return _build_dbt_project(
+        "mysql",
         tmp_path_factory.mktemp("dbt-envs"),
         tmp_path_factory.mktemp("e2e"),
     )
 
 
 # ---------------------------------------------------------------------------
-# Dict-style fixtures for parametrized tests
+# Parametrized test fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
-def dbt_artifacts(duckdb_project):
-    """Returns {adapter_name: {catalog_path, manifest_path, project_dir}}."""
-    return {"duckdb": duckdb_project}
+@pytest_asyncio.fixture(params=["duckdb", "postgres", "mysql"])
+async def adapter_env(request, tmp_path):
+    """Parametrized fixture providing AdapterEnv for each adapter."""
+    name = request.param
+    pytest.importorskip(_DRIVER_MODULE[name])
+
+    artifacts = request.getfixturevalue(f"{name}_artifacts")
+    data = _get_adapter_data(name, artifacts)
+
+    if name == "duckdb":
+        db_path = artifacts["project_dir"] / "jaffle_shop.duckdb"
+        db: SyncDBConnection | AsyncDBConnection = SyncDBConnection(
+            f"duckdb:///{db_path}"
+        )
+    else:
+        db = AsyncDBConnection(_ASYNC_URL[name])
+        await db.connect()
+
+    yield AdapterEnv(
+        name=name,
+        project=data["project"],
+        db=db,
+        registry=data["registry"],
+        db_graphql=data["db_graphql"],
+    )
+    await db.close()
 
 
-@pytest_asyncio.fixture
-async def db_connection(dbt_artifacts):
-    """Returns {adapter_name: connection} — fresh connections per test."""
-    connections: dict[str, SyncDBConnection] = {}
+@pytest.fixture(params=["postgres", "mysql"])
+def serve_adapter_env(request, tmp_path):
+    """Parametrized fixture for HTTP serve tests (async DB drivers only)."""
+    name = request.param
+    pytest.importorskip(_DRIVER_MODULE[name])
 
-    duckdb_path = dbt_artifacts["duckdb"]["project_dir"] / "jaffle_shop.duckdb"
-    connections["duckdb"] = SyncDBConnection(f"duckdb:///{duckdb_path}")
+    artifacts = request.getfixturevalue(f"{name}_artifacts")
+    data = _get_adapter_data(name, artifacts)
 
-    yield connections
+    gql_path = tmp_path / f"db_{name}.graphql"
+    gql_path.write_text(data["db_graphql"])
 
-    for db in connections.values():
-        await db.close()
+    yield {
+        "name": name,
+        "db_url": _ASYNC_URL[name],
+        "db_graphql_path": gql_path,
+    }

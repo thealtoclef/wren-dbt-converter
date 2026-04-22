@@ -69,12 +69,12 @@ def _parse_fk_expression(expression: str) -> tuple[str, str] | None:
 
     try:
         table_name = _sqlglot_parse(table_ref, into=exp.Table).name
-    except (SqlglotError, Exception):
+    except SqlglotError:
         table_name = table_ref.split(".")[-1].strip('"').strip("`")
 
     try:
         col = _sqlglot_parse(col_raw, into=exp.Column).name
-    except (SqlglotError, Exception):
+    except SqlglotError:
         col = col_raw.strip('"').strip("`")
 
     return (table_name, col) if table_name and col else None

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from dbt_graphql.dbt.artifacts import load_catalog, load_manifest
 from dbt_graphql.dbt.processors.compiled_sql import (
     build_schema_for_model,
@@ -85,14 +87,15 @@ class TestDetectDialect:
 
         assert detect_dialect(_Man()) == "tsql"
 
-    def test_missing_adapter_returns_empty_string(self):
+    def test_missing_adapter_raises(self):
         class _Meta:
             adapter_type = None
 
         class _Man:
             metadata = _Meta()
 
-        assert detect_dialect(_Man()) == ""
+        with pytest.raises(ValueError, match="adapter_type"):
+            detect_dialect(_Man())
 
 
 class TestQualifyModelSql:

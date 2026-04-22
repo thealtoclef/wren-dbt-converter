@@ -63,8 +63,8 @@ def extract_project(
     manifest = load_manifest(manifest_path)
 
     # 3. Get project name and adapter type from manifest metadata
-    project_name: str = getattr(manifest.metadata, "project_name", None) or ""
-    adapter_type: str = getattr(manifest.metadata, "adapter_type", None) or ""
+    project_name: str = manifest.metadata.project_name
+    adapter_type: str = manifest.metadata.adapter_type
 
     # 4. Preprocess tests (enums, not-null)
     tests_result = preprocess_tests(manifest)
@@ -87,8 +87,8 @@ def extract_project(
         manifest_node = manifest.nodes.get(key)
 
         # Build columns
-        catalog_columns: dict = catalog_node.columns or {}
-        manifest_columns: dict = getattr(manifest_node, "columns", None) or {}
+        catalog_columns: dict = catalog_node.columns
+        manifest_columns: dict = manifest_node.columns if manifest_node else {}
 
         pk_cols: list[str] = constraints_result.primary_keys.get(key, [])
 
@@ -108,9 +108,8 @@ def extract_project(
             enum_name = tests_result.column_to_enum_name.get(col_key)
             enum_values = enum_values_by_name.get(enum_name) if enum_name else None
 
-            description = (
-                getattr(manifest_columns.get(col_name), "description", None) or ""
-            )
+            man_col = manifest_columns.get(col_name)
+            description = man_col.description if man_col else ""
 
             columns.append(
                 ColumnInfo(
@@ -134,13 +133,12 @@ def extract_project(
 
         # Get database and schema from catalog.
         # MySQL doesn't populate database; fall back to schema.
-        # Both default to "" rather than crashing model construction.
-        schema = catalog_node.metadata.schema_ or ""
+        schema = catalog_node.metadata.schema_
         database = catalog_node.metadata.database or schema
 
         # Get alias and description from manifest node
-        model_alias = getattr(manifest_node, "alias", None)
-        description = getattr(manifest_node, "description", None) or ""
+        model_alias = manifest_node.alias if manifest_node else None
+        description = manifest_node.description if manifest_node else ""
 
         models.append(
             ModelInfo(

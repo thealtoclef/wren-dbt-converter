@@ -203,7 +203,7 @@ def _run_serve(args) -> None:
     if args.config:
         try:
             config = load_config(args.config)
-        except (ValueError, Exception) as exc:
+        except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
 

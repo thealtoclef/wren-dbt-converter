@@ -1,21 +1,18 @@
-"""Integration tests for the GraphQL HTTP server (Starlette + Ariadne + SQLite).
+"""Integration tests for the GraphQL HTTP server (Starlette + Ariadne).
 
-Creates a real SQLite database, generates a minimal db.graphql schema, starts
-the Starlette app via Starlette's TestClient (which handles the ASGI lifespan),
-and makes real HTTP GraphQL requests to verify the full request path.
+Starts the real Starlette app via TestClient against PostgreSQL and MySQL
+databases populated by the jaffle-shop dbt project, then makes real HTTP
+GraphQL requests to verify the full request path.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from sqlalchemy import create_engine, text
 from starlette.testclient import TestClient
 
 from dbt_graphql.api.app import create_app
 
-pytest.importorskip("aiosqlite", reason="aiosqlite required for SQLite async tests")
+pytest.importorskip("ariadne", reason="ariadne required for serve tests")
 
 
 # ---------------------------------------------------------------------------
@@ -23,56 +20,11 @@ pytest.importorskip("aiosqlite", reason="aiosqlite required for SQLite async tes
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def sqlite_db(tmp_path_factory) -> Path:
-    """SQLite database with two tables and seed data."""
-    db_path = tmp_path_factory.mktemp("serve_db") / "test.db"
-    engine = create_engine(f"sqlite:///{db_path}")
-    with engine.connect() as conn:
-        conn.execute(
-            text("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-        )
-        conn.execute(
-            text(
-                "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT)"
-            )
-        )
-        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
-        conn.execute(
-            text(
-                "INSERT INTO posts VALUES (1, 1, 'Hello'), (2, 1, 'World'), (3, 2, 'Hi')"
-            )
-        )
-        conn.commit()
-    engine.dispose()
-    return db_path
-
-
-@pytest.fixture(scope="module")
-def db_graphql_file(tmp_path_factory) -> Path:
-    """Minimal db.graphql SDL matching the SQLite test database."""
-    path = tmp_path_factory.mktemp("serve_schema") / "db.graphql"
-    path.write_text(
-        'type users @table(name: "users") {\n'
-        '  id: Int! @column(type: "INTEGER") @id\n'
-        '  name: String! @column(type: "TEXT")\n'
-        "}\n"
-        "\n"
-        'type posts @table(name: "posts") {\n'
-        '  id: Int! @column(type: "INTEGER") @id\n'
-        '  user_id: Int @column(type: "INTEGER")\n'
-        '  title: String @column(type: "TEXT")\n'
-        "}\n"
-    )
-    return path
-
-
-@pytest.fixture(scope="module")
-def client(sqlite_db, db_graphql_file) -> TestClient:
-    """TestClient wrapping the real Starlette app; handles ASGI lifespan."""
+@pytest.fixture
+def client(serve_adapter_env):
     app = create_app(
-        db_graphql_path=db_graphql_file,
-        db_url=f"sqlite+aiosqlite:///{sqlite_db}",
+        db_graphql_path=serve_adapter_env["db_graphql_path"],
+        db_url=serve_adapter_env["db_url"],
     )
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
@@ -84,46 +36,52 @@ def client(sqlite_db, db_graphql_file) -> TestClient:
 
 
 class TestGraphQLHTTP:
-    def test_query_all_users(self, client):
-        resp = client.post("/graphql", json={"query": "{ users { id name } }"})
+    def test_query_all_customers(self, client):
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ customers { customer_id first_name last_name } }"},
+        )
         assert resp.status_code == 200
         data = resp.json()
-        assert "errors" not in data
-        rows = data["data"]["users"]
-        assert len(rows) == 2
-        names = {r["name"] for r in rows}
-        assert "Alice" in names
-        assert "Bob" in names
+        assert "errors" not in data, data.get("errors")
+        rows = data["data"]["customers"]
+        assert len(rows) > 0
+        assert "customer_id" in rows[0]
+        assert "first_name" in rows[0]
 
-    def test_query_all_posts(self, client):
-        resp = client.post("/graphql", json={"query": "{ posts { id title } }"})
+    def test_query_all_orders(self, client):
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ orders { order_id status } }"},
+        )
         assert resp.status_code == 200
         data = resp.json()
-        assert "errors" not in data
-        assert len(data["data"]["posts"]) == 3
+        assert "errors" not in data, data.get("errors")
+        assert len(data["data"]["orders"]) > 0
 
     def test_query_with_limit(self, client):
         resp = client.post(
             "/graphql",
-            json={"query": "{ users(limit: 1) { id name } }"},
+            json={"query": "{ customers(limit: 1) { customer_id } }"},
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "errors" not in data
-        assert len(data["data"]["users"]) == 1
+        assert "errors" not in data, data.get("errors")
+        assert len(data["data"]["customers"]) == 1
 
     def test_query_selected_fields_only(self, client):
-        resp = client.post("/graphql", json={"query": "{ users { name } }"})
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ customers { first_name } }"},
+        )
         assert resp.status_code == 200
         data = resp.json()
-        rows = data["data"]["users"]
-        assert all("name" in r for r in rows)
-        # id not requested → not in result
-        assert all("id" not in r for r in rows)
+        rows = data["data"]["customers"]
+        assert all("first_name" in r for r in rows)
+        assert all("customer_id" not in r for r in rows)
 
     def test_invalid_graphql_syntax_returns_error(self, client):
         resp = client.post("/graphql", json={"query": "{ not valid graphql {{{"})
-        # Ariadne returns 400 for syntax errors
         assert resp.status_code in (400, 200)
         data = resp.json()
         if resp.status_code == 200:
@@ -135,42 +93,42 @@ class TestGraphQLHTTP:
             json={"query": "{ __schema { types { name } } }"},
         )
         assert resp.status_code == 200
-        data = resp.json()
-        type_names = {t["name"] for t in data["data"]["__schema"]["types"]}
-        assert "users" in type_names
-        assert "posts" in type_names
+        type_names = {t["name"] for t in resp.json()["data"]["__schema"]["types"]}
+        assert "customers" in type_names
+        assert "orders" in type_names
 
     def test_schema_exposes_where_input_types(self, client):
-        """Each table must have a WhereInput type so the where argument is usable."""
         resp = client.post(
             "/graphql",
             json={"query": "{ __schema { types { name } } }"},
         )
         assert resp.status_code == 200
         type_names = {t["name"] for t in resp.json()["data"]["__schema"]["types"]}
-        assert "usersWhereInput" in type_names
-        assert "postsWhereInput" in type_names
+        assert "customersWhereInput" in type_names
+        assert "ordersWhereInput" in type_names
 
     def test_where_filter_end_to_end(self, client):
-        """where arg must reach the SQL engine and filter rows correctly."""
         resp = client.post(
             "/graphql",
-            json={"query": "{ users(where: { id: 1 }) { id name } }"},
+            json={
+                "query": "{ customers(where: { customer_id: 1 }) { customer_id first_name } }"
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
         assert "errors" not in data, data.get("errors")
-        rows = data["data"]["users"]
+        rows = data["data"]["customers"]
         assert len(rows) == 1
-        assert rows[0]["id"] == 1
-        assert rows[0]["name"] == "Alice"
+        assert rows[0]["customer_id"] == 1
 
     def test_where_filter_no_match_returns_empty(self, client):
         resp = client.post(
             "/graphql",
-            json={"query": "{ users(where: { id: 999 }) { id name } }"},
+            json={
+                "query": "{ customers(where: { customer_id: 9999 }) { customer_id } }"
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
         assert "errors" not in data, data.get("errors")
-        assert data["data"]["users"] == []
+        assert data["data"]["customers"] == []

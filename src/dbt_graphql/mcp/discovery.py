@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
+from dbt_graphql.config import EnrichmentConfig
+
 
 def _is_date_type(sql_type: str) -> bool:
     """Return True for date/time SQL types across common adapters."""
@@ -83,8 +85,16 @@ class SchemaDiscovery:
     def __init__(self, project, db=None, enrichment=None) -> None:
         self._project = project
         self._db = db
-        self._enrichment = enrichment
+        self._enrichment = enrichment or EnrichmentConfig()
         self._cache: dict[str, TableDetail] = {}
+
+        from sqlalchemy.dialects import registry as _dialect_reg
+
+        self._preparer = (
+            _dialect_reg.load(db.dialect_name)().identifier_preparer
+            if db is not None
+            else None
+        )
 
         # Build adjacency for BFS path-finding
         self._adj: dict[
@@ -160,18 +170,18 @@ class SchemaDiscovery:
 
     async def _enrich(self, detail: TableDetail) -> None:
         """Populate live fields on detail in-place: row_count, sample_rows, value_summary."""
+        assert self._db is not None
+        assert self._preparer is not None
+
         cfg = self._enrichment
-        budget: int = cfg.budget if cfg else 20
-        distinct_limit: int = cfg.distinct_values_limit if cfg else 50
-        max_cardinality: int = cfg.distinct_values_max_cardinality if cfg else 500
+        qi = self._preparer.quote_identifier
 
-        detail.row_count = await self.get_row_count(detail.name)
-        detail.sample_rows = await self.get_sample_rows(detail.name, limit=3)
+        detail.row_count = await self._get_row_count(detail.name, qi)
+        detail.sample_rows = await self._get_sample_rows(detail.name, qi, limit=3)
 
-        remaining = [budget]
+        remaining = [cfg.budget]
 
         async def _enrich_col(col: ColumnDetail) -> None:
-            # Enums are already set statically; skip live query.
             if col.enum_values is not None:
                 return
             # Budget check-and-decrement is atomic in single-threaded asyncio
@@ -181,17 +191,20 @@ class SchemaDiscovery:
             remaining[0] -= 1
 
             if _is_date_type(col.sql_type):
-                mn, mx = await self.get_date_range(detail.name, col.name)
+                mn, mx = await self._get_date_range(detail.name, col.name, qi)
                 if mn is not None:
                     col.value_summary = {"kind": "range", "min": mn, "max": mx}
             else:
-                values = await self.get_distinct_values(
-                    detail.name, col.name, limit=max_cardinality + 1
+                values = await self._get_distinct_values(
+                    detail.name,
+                    col.name,
+                    qi,
+                    limit=cfg.distinct_values_max_cardinality + 1,
                 )
-                if len(values) <= max_cardinality:
+                if len(values) <= cfg.distinct_values_max_cardinality:
                     col.value_summary = {
                         "kind": "distinct",
-                        "values": values[:distinct_limit],
+                        "values": values[: cfg.distinct_values_limit],
                     }
 
         await asyncio.gather(*(_enrich_col(c) for c in detail.columns))
@@ -254,37 +267,26 @@ class SchemaDiscovery:
                 )
         return result
 
-    # ---- Live enrichment (requires db connection) ----
+    # ---- Live enrichment helpers (only called when db is set) ----
 
-    @staticmethod
-    def _qi(name: str) -> str:
-        """Double-quote an identifier, escaping any embedded double-quotes."""
-        return '"' + name.replace('"', '""') + '"'
-
-    async def get_row_count(self, table: str) -> int | None:
-        if self._db is None:
-            return None
-        qt = self._qi(table)
+    async def _get_row_count(self, table: str, qi) -> int | None:
+        qt = qi(table)
         rows = await self._db.execute_text(f"SELECT COUNT(*) AS cnt FROM {qt}")
         return rows[0]["cnt"] if rows else None
 
-    async def get_distinct_values(
-        self, table: str, column: str, limit: int = 50
+    async def _get_distinct_values(
+        self, table: str, column: str, qi, limit: int = 50
     ) -> list:
-        if self._db is None:
-            return []
-        qt, qc = self._qi(table), self._qi(column)
+        qt, qc = qi(table), qi(column)
         rows = await self._db.execute_text(
             f"SELECT DISTINCT {qc} FROM {qt} LIMIT {limit}"
         )
         return [r[column] for r in rows]
 
-    async def get_date_range(
-        self, table: str, column: str
+    async def _get_date_range(
+        self, table: str, column: str, qi
     ) -> tuple[str | None, str | None]:
-        if self._db is None:
-            return None, None
-        qt, qc = self._qi(table), self._qi(column)
+        qt, qc = qi(table), qi(column)
         rows = await self._db.execute_text(
             f"SELECT MIN({qc}) AS mn, MAX({qc}) AS mx FROM {qt}"
         )
@@ -292,8 +294,6 @@ class SchemaDiscovery:
             return None, None
         return str(rows[0]["mn"]), str(rows[0]["mx"])
 
-    async def get_sample_rows(self, table: str, limit: int = 5) -> list[dict]:
-        if self._db is None:
-            return []
-        qt = self._qi(table)
+    async def _get_sample_rows(self, table: str, qi, limit: int = 5) -> list[dict]:
+        qt = qi(table)
         return await self._db.execute_text(f"SELECT * FROM {qt} LIMIT {limit}")

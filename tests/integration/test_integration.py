@@ -1,24 +1,17 @@
-"""End-to-end integration tests.
+"""End-to-end compiler tests across DuckDB, PostgreSQL, and MySQL.
 
-For duckdb adapter the test:
-1. Copies jaffle-shop into a temp directory
-2. Runs dbt seed/run/docs-generate to produce catalog.json + manifest.json
-3. Runs extract_project → format_graphql → parse_db_graphql → compile_query
-4. Executes the compiled SQL against the real database
-5. Asserts results
+For each adapter the test:
+1. Builds the jaffle-shop dbt project (session-scoped fixture)
+2. Runs extract_project → format_graphql → parse_db_graphql → compile_query
+3. Executes the compiled SQL against the real database
+4. Asserts results
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-import pytest_asyncio
 
 from dbt_graphql.compiler.query import compile_query
-from dbt_graphql.formatter.schema import TableRegistry, parse_db_graphql
-from dbt_graphql.formatter.graphql import format_graphql
-from dbt_graphql.pipeline import extract_project
 
 
 # ---------------------------------------------------------------------------
@@ -49,32 +42,14 @@ def _relation_field_node(col_name, child_names):
     )()
 
 
-def _build_registry(catalog_path: Path, manifest_path: Path) -> TableRegistry:
-    """Full pipeline: artifacts → ProjectInfo → db.graphql → TableRegistry."""
-    project = extract_project(catalog_path, manifest_path)
-    result = format_graphql(project)
-    _, registry = parse_db_graphql(result.db_graphql)
-    return registry
-
-
 # ---------------------------------------------------------------------------
-# E2E tests (duckdb only)
+# E2E tests (all adapters)
 # ---------------------------------------------------------------------------
 
 
 class TestE2E:
-    """End-to-end tests against duckdb."""
-
-    @pytest_asyncio.fixture
-    async def registry(self, dbt_artifacts):
-        artifacts = dbt_artifacts["duckdb"]
-        return _build_registry(
-            artifacts["catalog_path"],
-            artifacts["manifest_path"],
-        )
-
     @pytest.mark.asyncio
-    async def test_select_customers(self, dbt_artifacts, db_connection, registry):
+    async def test_select_customers(self, adapter_env):
         fn = _field_node(
             "customers",
             [
@@ -83,42 +58,41 @@ class TestE2E:
                 _field_node("last_name"),
             ],
         )
-        rows = await db_connection["duckdb"].execute(
-            compile_query(registry["customers"], [fn], registry)
+        rows = await adapter_env.db.execute(
+            compile_query(adapter_env.registry["customers"], [fn], adapter_env.registry)
         )
         assert len(rows) > 0
         assert rows[0]["customer_id"] is not None
         assert "first_name" in rows[0]
 
     @pytest.mark.asyncio
-    async def test_where_filter(self, dbt_artifacts, db_connection, registry):
+    async def test_where_filter(self, adapter_env):
         fn = _field_node(
             "customers",
-            [
-                _field_node("customer_id"),
-                _field_node("first_name"),
-            ],
+            [_field_node("customer_id"), _field_node("first_name")],
         )
         stmt = compile_query(
-            registry["customers"],
+            adapter_env.registry["customers"],
             [fn],
-            registry,
+            adapter_env.registry,
             where={"customer_id": 1},
         )
-        rows = await db_connection["duckdb"].execute(stmt)
+        rows = await adapter_env.db.execute(stmt)
         assert len(rows) == 1
         assert rows[0]["customer_id"] == 1
 
     @pytest.mark.asyncio
-    async def test_limit(self, dbt_artifacts, db_connection, registry):
+    async def test_limit(self, adapter_env):
         fn = _field_node("customers", [_field_node("customer_id")])
-        rows = await db_connection["duckdb"].execute(
-            compile_query(registry["customers"], [fn], registry, limit=1)
+        rows = await adapter_env.db.execute(
+            compile_query(
+                adapter_env.registry["customers"], [fn], adapter_env.registry, limit=1
+            )
         )
         assert len(rows) == 1
 
     @pytest.mark.asyncio
-    async def test_orders_with_relation(self, dbt_artifacts, db_connection, registry):
+    async def test_orders_with_relation(self, adapter_env):
         fn = _field_node(
             "orders",
             [
@@ -127,8 +101,8 @@ class TestE2E:
                 _relation_field_node("customer_id", ["customer_id", "first_name"]),
             ],
         )
-        rows = await db_connection["duckdb"].execute(
-            compile_query(registry["orders"], [fn], registry)
+        rows = await adapter_env.db.execute(
+            compile_query(adapter_env.registry["orders"], [fn], adapter_env.registry)
         )
         assert len(rows) > 0
         assert rows[0]["order_id"] is not None

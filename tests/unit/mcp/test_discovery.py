@@ -207,6 +207,8 @@ class TestEnrichmentBudget:
         """Return a fake DB that records every call and returns minimal data."""
 
         class _MockDb:
+            dialect_name = "postgresql"
+
             async def execute_text(self, sql: str):
                 call_log.append(sql)
                 if "COUNT(*)" in sql:
