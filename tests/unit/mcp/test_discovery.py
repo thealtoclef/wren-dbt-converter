@@ -1,5 +1,6 @@
 """Tests for SchemaDiscovery (no live DB required)."""
 
+import asyncio
 from pathlib import Path
 
 from dbt_graphql.pipeline import extract_project
@@ -46,14 +47,42 @@ class TestListTables:
 class TestDescribeTable:
     def test_returns_columns(self):
         d = _make_discovery()
-        detail = d.describe_table("customers")
+        detail = asyncio.run(d.describe_table("customers"))
         assert detail is not None
         col_names = {c.name for c in detail.columns}
         assert "customer_id" in col_names
 
     def test_missing_table_returns_none(self):
         d = _make_discovery()
-        assert d.describe_table("nonexistent") is None
+        assert asyncio.run(d.describe_table("nonexistent")) is None
+
+    def test_no_db_returns_null_enrichment(self):
+        d = _make_discovery()
+        detail = asyncio.run(d.describe_table("customers"))
+        assert detail is not None
+        assert detail.row_count is None
+        assert detail.sample_rows == []
+        for col in detail.columns:
+            if col.enum_values is None:
+                assert col.value_summary is None
+
+    def test_enum_column_gets_value_summary_without_db(self):
+        col = ColumnInfo(name="status", type="VARCHAR", enum_values=["placed", "shipped"])
+        model = ModelInfo(name="orders", database="db", schema="main", columns=[col])
+        project = ProjectInfo(
+            project_name="test", adapter_type="duckdb", models=[model]
+        )
+        d = SchemaDiscovery(project)
+        detail = asyncio.run(d.describe_table("orders"))
+        assert detail is not None
+        status_col = next(c for c in detail.columns if c.name == "status")
+        assert status_col.value_summary == {"kind": "enum", "values": ["placed", "shipped"]}
+
+    def test_result_is_cached(self):
+        d = _make_discovery()
+        detail1 = asyncio.run(d.describe_table("customers"))
+        detail2 = asyncio.run(d.describe_table("customers"))
+        assert detail1 is detail2
 
 
 class TestFindPath:
@@ -109,9 +138,9 @@ def _make_rel(
     return RelationshipInfo(
         name=f"{from_model}_{from_col}_{to_model}_{to_col}",
         from_model=from_model,
-        from_column=from_col,
+        from_columns=[from_col],
         to_model=to_model,
-        to_column=to_col,
+        to_columns=[to_col],
         join_type=JoinType.many_to_one,
         origin=RelationshipOrigin.data_test,
     )
@@ -164,3 +193,57 @@ class TestFindPathDiamond:
         )
         d = SchemaDiscovery(project)
         assert d.find_path("A", "D") == []
+
+
+class TestEnrichmentBudget:
+    """Budget counter limits how many live DB queries are made per call."""
+
+    def _make_mock_db(self, call_log: list):
+        """Return a fake DB that records every call and returns minimal data."""
+
+        class _MockDb:
+            async def execute_text(self, sql: str):
+                call_log.append(sql)
+                if "COUNT(*)" in sql:
+                    return [{"cnt": 0}]
+                if "MIN(" in sql:
+                    return [{"mn": None, "mx": None}]
+                return []
+
+        return _MockDb()
+
+    def test_budget_zero_skips_column_enrichment(self):
+        from dbt_graphql.config import EnrichmentConfig
+
+        calls: list = []
+        db = self._make_mock_db(calls)
+
+        cols = [ColumnInfo(name=f"col{i}", type="VARCHAR") for i in range(5)]
+        model = ModelInfo(name="t", database="db", schema="main", columns=cols)
+        project = ProjectInfo(project_name="p", adapter_type="duckdb", models=[model])
+        enrichment = EnrichmentConfig(budget=0)
+        d = SchemaDiscovery(project, db=db, enrichment=enrichment)
+        detail = asyncio.run(d.describe_table("t"))
+        assert detail is not None
+        # row_count + sample_rows are NOT counted against budget
+        assert detail.row_count == 0
+        # No column queries should have fired
+        col_queries = [q for q in calls if "DISTINCT" in q or "MIN(" in q]
+        assert col_queries == []
+        for col in detail.columns:
+            assert col.value_summary is None
+
+    def test_budget_limits_total_column_queries(self):
+        from dbt_graphql.config import EnrichmentConfig
+
+        calls: list = []
+        db = self._make_mock_db(calls)
+
+        cols = [ColumnInfo(name=f"col{i}", type="VARCHAR") for i in range(10)]
+        model = ModelInfo(name="t", database="db", schema="main", columns=cols)
+        project = ProjectInfo(project_name="p", adapter_type="duckdb", models=[model])
+        enrichment = EnrichmentConfig(budget=3)
+        d = SchemaDiscovery(project, db=db, enrichment=enrichment)
+        asyncio.run(d.describe_table("t"))
+        col_queries = [q for q in calls if "DISTINCT" in q or "MIN(" in q]
+        assert len(col_queries) == 3

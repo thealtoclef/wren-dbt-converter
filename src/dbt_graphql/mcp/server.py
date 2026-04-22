@@ -13,8 +13,8 @@ class McpTools:
     Instantiate directly for testing; wrap with create_mcp_server for serving.
     """
 
-    def __init__(self, project, db=None) -> None:
-        self._discovery = SchemaDiscovery(project, db=db)
+    def __init__(self, project, db=None, enrichment=None) -> None:
+        self._discovery = SchemaDiscovery(project, db=db, enrichment=enrichment)
         self._db = db
 
     def list_tables(self) -> dict[str, Any]:
@@ -38,14 +38,16 @@ class McpTools:
             },
         }
 
-    def describe_table(self, name: str) -> dict[str, Any]:
-        """Get full column details for a table."""
-        detail = self._discovery.describe_table(name)
+    async def describe_table(self, name: str) -> dict[str, Any]:
+        """Get full column details for a table, including live enrichment when a DB is configured."""
+        detail = await self._discovery.describe_table(name)
         if detail is None:
             return {"error": f"Table '{name}' not found.", "_meta": {}}
         return {
             "name": detail.name,
             "description": detail.description,
+            "row_count": detail.row_count,
+            "sample_rows": detail.sample_rows,
             "columns": [
                 {
                     "name": c.name,
@@ -54,6 +56,7 @@ class McpTools:
                     "is_unique": c.is_unique,
                     "description": c.description,
                     "enum_values": c.enum_values,
+                    "value_summary": c.value_summary,
                 }
                 for c in detail.columns
             ],
@@ -151,11 +154,11 @@ class McpTools:
         }
 
 
-def create_mcp_server(project, db=None):
+def create_mcp_server(project, db=None, enrichment=None):
     """Build and return a fastmcp Server with all tools registered."""
     from fastmcp import FastMCP
 
-    tools = McpTools(project, db=db)
+    tools = McpTools(project, db=db, enrichment=enrichment)
     mcp = FastMCP("dbt-graphql")
 
     mcp.tool()(tools.list_tables)
@@ -168,7 +171,7 @@ def create_mcp_server(project, db=None):
     return mcp
 
 
-def serve_mcp(project, db=None) -> None:
+def serve_mcp(project, db=None, enrichment=None) -> None:
     """Start the MCP server with stdio transport."""
-    mcp = create_mcp_server(project, db=db)
+    mcp = create_mcp_server(project, db=db, enrichment=enrichment)
     mcp.run(transport="stdio")

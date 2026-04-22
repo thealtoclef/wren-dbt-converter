@@ -6,7 +6,22 @@ Provides static discovery (from ProjectInfo) and optional live enrichment
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+
+
+def _is_date_type(sql_type: str) -> bool:
+    """Return True for date/time SQL types across common adapters."""
+    t = sql_type.lower().split("(")[0].strip()
+    return t in {
+        "date",
+        "datetime",
+        "time",
+        "timestamp",
+        "timestamptz",
+        "timestamp with time zone",
+        "timestamp without time zone",
+    }
 
 
 @dataclass
@@ -17,6 +32,7 @@ class ColumnDetail:
     is_unique: bool = False
     description: str = ""
     enum_values: list[str] | None = None
+    value_summary: dict | None = None
 
 
 @dataclass
@@ -33,6 +49,8 @@ class TableDetail:
     description: str = ""
     columns: list[ColumnDetail] = field(default_factory=list)
     relationships: list[str] = field(default_factory=list)
+    row_count: int | None = None
+    sample_rows: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -62,9 +80,12 @@ class RelatedTable:
 class SchemaDiscovery:
     """Discover schema structure from a ProjectInfo IR."""
 
-    def __init__(self, project, db=None) -> None:
+    def __init__(self, project, db=None, enrichment=None) -> None:
         self._project = project
         self._db = db
+        self._enrichment = enrichment
+        self._cache: dict[str, TableDetail] = {}
+
         # Build adjacency for BFS path-finding
         self._adj: dict[
             str, list[tuple[str, str, str]]
@@ -90,10 +111,19 @@ class SchemaDiscovery:
             for m in self._project.models
         ]
 
-    def describe_table(self, name: str) -> TableDetail | None:
+    async def describe_table(self, name: str) -> TableDetail | None:
+        """Return full column + enrichment detail for a table.
+
+        Results are cached for the lifetime of this SchemaDiscovery instance.
+        Live enrichment runs only when a DB connection is provided.
+        """
         model = next((m for m in self._project.models if m.name == name), None)
         if model is None:
             return None
+
+        if name in self._cache:
+            return self._cache[name]
+
         columns = [
             ColumnDetail(
                 name=c.name,
@@ -110,12 +140,58 @@ class SchemaDiscovery:
             f"{rel.to_model}.{rel.to_columns[0] if rel.to_columns else ''}"
             for rel in model.relationships
         ]
-        return TableDetail(
+        detail = TableDetail(
             name=name,
             description=model.description,
             columns=columns,
             relationships=relationships,
         )
+
+        # Static enum summaries — no DB needed.
+        for col in detail.columns:
+            if col.enum_values is not None:
+                col.value_summary = {"kind": "enum", "values": col.enum_values}
+
+        if self._db is not None:
+            await self._enrich(detail)
+
+        self._cache[name] = detail
+        return detail
+
+    async def _enrich(self, detail: TableDetail) -> None:
+        """Populate live fields on detail in-place: row_count, sample_rows, value_summary."""
+        cfg = self._enrichment
+        budget: int = cfg.budget if cfg else 20
+        distinct_limit: int = cfg.distinct_values_limit if cfg else 50
+        max_cardinality: int = cfg.distinct_values_max_cardinality if cfg else 500
+
+        detail.row_count = await self.get_row_count(detail.name)
+        detail.sample_rows = await self.get_sample_rows(detail.name, limit=3)
+
+        remaining = [budget]
+
+        async def _enrich_col(col: ColumnDetail) -> None:
+            # Enums are already set statically; skip live query.
+            if col.enum_values is not None:
+                return
+            # Budget check-and-decrement is atomic in single-threaded asyncio
+            # (no await between check and decrement).
+            if remaining[0] <= 0:
+                return
+            remaining[0] -= 1
+
+            if _is_date_type(col.sql_type):
+                mn, mx = await self.get_date_range(detail.name, col.name)
+                if mn is not None:
+                    col.value_summary = {"kind": "range", "min": mn, "max": mx}
+            else:
+                values = await self.get_distinct_values(
+                    detail.name, col.name, limit=max_cardinality + 1
+                )
+                if len(values) <= max_cardinality:
+                    col.value_summary = {"kind": "distinct", "values": values[:distinct_limit]}
+
+        await asyncio.gather(*(_enrich_col(c) for c in detail.columns))
 
     def find_path(self, from_table: str, to_table: str) -> list[JoinPath]:
         """BFS to find all shortest join paths between two tables.

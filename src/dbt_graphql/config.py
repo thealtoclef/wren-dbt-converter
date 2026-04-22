@@ -28,10 +28,17 @@ class MonitoringConfig(BaseModel):
     log_level: str = "INFO"
 
 
+class EnrichmentConfig(BaseModel):
+    budget: int = 20
+    distinct_values_limit: int = 50
+    distinct_values_max_cardinality: int = 500
+
+
 class AppConfig(BaseModel):
     db: DbConfig
     serve: ServeConfig | None = None
     monitoring: MonitoringConfig = MonitoringConfig()
+    enrichment: EnrichmentConfig = EnrichmentConfig()
 
 
 def load_config(path: str | Path) -> AppConfig:
