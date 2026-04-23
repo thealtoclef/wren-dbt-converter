@@ -123,9 +123,11 @@ def serve(
         db_url=db_url,
         config=config,
     )
+    logger.info("listening on http://{}:{}", host, port)
     Granian(
         target=f"{__name__}:_asgi_app",
         address=host,
         port=port,
         interface=Interfaces.ASGI,
+        log_enabled=False,
     ).serve()

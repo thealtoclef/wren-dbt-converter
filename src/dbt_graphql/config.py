@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import importlib.resources
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _load_defaults() -> dict:
+    ref = importlib.resources.files("dbt_graphql").joinpath("defaults.yml")
+    return yaml.safe_load(ref.read_text())
+
+
+_DEFAULTS = _load_defaults()
 
 
 class DbConfig(BaseModel):
@@ -50,7 +59,7 @@ class MetricsConfig(BaseModel):
 class LogsConfig(BaseModel):
     endpoint: str | None = None
     protocol: str | None = None
-    level: str = "INFO"
+    level: str = _DEFAULTS["monitoring"]["logs"]["level"]
 
     @model_validator(mode="after")
     def _require_protocol_with_endpoint(self) -> "LogsConfig":
@@ -62,16 +71,16 @@ class LogsConfig(BaseModel):
 
 
 class MonitoringConfig(BaseModel):
-    service_name: str = "dbt-graphql"
+    service_name: str = _DEFAULTS["monitoring"]["service_name"]
     traces: TracesConfig = TracesConfig()
     metrics: MetricsConfig = MetricsConfig()
     logs: LogsConfig = LogsConfig()
 
 
 class EnrichmentConfig(BaseModel):
-    budget: int = 20
-    distinct_values_limit: int = 50
-    distinct_values_max_cardinality: int = 500
+    budget: int = _DEFAULTS["enrichment"]["budget"]
+    distinct_values_limit: int = _DEFAULTS["enrichment"]["distinct_values_limit"]
+    distinct_values_max_cardinality: int = _DEFAULTS["enrichment"]["distinct_values_max_cardinality"]
 
 
 class AppConfig(BaseSettings):
