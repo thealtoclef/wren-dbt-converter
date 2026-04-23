@@ -98,24 +98,58 @@ def _add_otlp_log_sink(config: MonitoringConfig, resource) -> None:
     }
 
     def _otlp_sink(message) -> None:
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceFlags,
+            set_span_in_context,
+        )
+
         r = message.record
         trace_id_str = r["extra"].get("otelTraceID", "0") or "0"
         span_id_str = r["extra"].get("otelSpanID", "0") or "0"
-        otel_logger.emit(
-            timestamp=int(r["time"].timestamp() * 1e9),
-            observed_timestamp=int(r["time"].timestamp() * 1e9),
-            severity_number=severity_map.get(r["level"].name, SeverityNumber.INFO),
-            severity_text=r["level"].name,
-            body=r["message"],
-            attributes={
-                "code.filepath": str(r["file"].path),
-                "code.lineno": r["line"],
-                "code.function": r["function"],
-                "logger.name": r["name"],
-            },
-            trace_id=int(trace_id_str, 16),
-            span_id=int(span_id_str, 16),
-        )
+        sampled = r["extra"].get("otelTraceSampled", False)
+
+        ctx = None
+        if trace_id_str != "0" and span_id_str != "0":
+            span_context = SpanContext(
+                trace_id=int(trace_id_str, 16),
+                span_id=int(span_id_str, 16),
+                is_remote=False,
+                trace_flags=TraceFlags(TraceFlags.SAMPLED if sampled else 0),
+            )
+            ctx = set_span_in_context(NonRecordingSpan(span_context))
+
+        attributes = {
+            "code.filepath": str(r["file"].path),
+            "code.lineno": r["line"],
+            "code.function": r["function"],
+            "logger.name": r["name"],
+        }
+
+        exc = r.get("exception")
+        if exc and exc[0] is not None:
+            import traceback
+
+            attributes["exception.type"] = exc[0].__name__
+            attributes["exception.message"] = str(exc[1]) if exc[1] else ""
+            if exc[2]:
+                attributes["exception.stacktrace"] = "".join(
+                    traceback.format_exception(exc[0], exc[1], exc[2])
+                )
+
+        try:
+            otel_logger.emit(
+                timestamp=int(r["time"].timestamp() * 1e9),
+                observed_timestamp=int(r["time"].timestamp() * 1e9),
+                context=ctx,
+                severity_number=severity_map.get(r["level"].name, SeverityNumber.INFO),
+                severity_text=r["level"].name,
+                body=r["message"],
+                attributes=attributes,
+            )
+        except Exception:
+            pass
 
     logger.add(_otlp_sink, level=config.logs.level.upper())
 

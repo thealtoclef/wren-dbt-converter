@@ -53,9 +53,9 @@ def _make_resolver(table_name: str):
             offset=kwargs.get("offset"),
             where=kwargs.get("where"),
         )
-        logger.debug("query %s: %s", table_name, stmt)
+        logger.debug("query {}: {}", table_name, stmt)
         rows = await ctx["db"].execute(stmt)
-        logger.debug("query %s returned %d rows", table_name, len(rows))
+        logger.debug("query {} returned {} rows", table_name, len(rows))
         return rows
 
     return resolve_table

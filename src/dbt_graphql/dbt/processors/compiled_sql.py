@@ -150,10 +150,10 @@ def qualify_model_sql(sql: str, dialect: str, schema: dict) -> Scope | None:
         _, scope = prepare_scope(expression, schema=schema, dialect=dialect or None)
         return scope
     except SqlglotError as e:
-        logger.debug("sqlglot processing failed (%s): %s", dialect, e)
+        logger.debug("sqlglot processing failed ({}): {}", dialect, e)
         return None
     except (ValueError, TypeError, AttributeError) as e:
-        logger.warning("unexpected error processing SQL (%s): %s", dialect, e)
+        logger.warning("unexpected error processing SQL ({}): {}", dialect, e)
         return None
 
 
