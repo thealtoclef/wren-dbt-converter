@@ -18,29 +18,12 @@ def _make_otel_mocks():
         "opentelemetry.sdk.resources": sdk_resources,
         "opentelemetry.sdk.trace": sdk_trace,
         "opentelemetry.sdk.trace.export": sdk_export,
-        # Disable log instrumentation so the real LoggingInstrumentor doesn't
-        # run against mock modules and pollute the global log-record factory.
         "opentelemetry.instrumentation": MagicMock(),
-        "opentelemetry.instrumentation.logging": None,
+        "opentelemetry.instrumentation.logging": MagicMock(),
     }
 
 
 class TestConfigureMonitoring:
-    def test_noop_when_sdk_missing(self):
-        with patch.dict(
-            "sys.modules",
-            {
-                "opentelemetry": None,
-                "opentelemetry.sdk": None,
-                "opentelemetry.sdk.trace": None,
-            },
-        ):
-            from importlib import reload
-            import dbt_graphql.monitoring as tel
-
-            reload(tel)
-            tel.configure_monitoring()  # must not raise
-
     def test_console_exporter_used_when_specified(self):
         mocks = _make_otel_mocks()
         console_exporter_cls = MagicMock()

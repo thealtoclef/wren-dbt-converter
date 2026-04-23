@@ -12,21 +12,12 @@ def configure_monitoring(
     log_level: str = "INFO",
     protocol: str = "grpc",
 ) -> None:
-    """Bootstrap the OTel SDK from config.yml values (monitoring section).
-
-    No-op if opentelemetry-sdk is not installed or the [api] extra is absent.
-    """
-    try:
-        from opentelemetry import trace
-        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    except ImportError:
-        logger.warning(
-            "opentelemetry-sdk not installed; monitoring disabled. "
-            "Install with: pip install dbt-graphql[api]"
-        )
-        return
+    """Bootstrap the OTel SDK from config.yml values (monitoring section)."""
+    from opentelemetry import trace
+    from opentelemetry.instrumentation.logging import LoggingInstrumentor
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.getLogger("dbt_graphql").setLevel(level)
@@ -40,34 +31,19 @@ def configure_monitoring(
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
         logger.info("monitoring configured with console exporter (log_level=%s)", log_level)
     else:
-        try:
-            if protocol == "http":
-                from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-                    OTLPSpanExporter,
-                )
-            else:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter,
-                )
+        if protocol == "http":
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-            exporter_instance = (
-                OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
-            )
-            provider.add_span_processor(BatchSpanProcessor(exporter_instance))
-            logger.info(
-                "monitoring configured with OTLP exporter (protocol=%s, endpoint=%s, log_level=%s)",
-                protocol,
-                endpoint,
-                log_level,
-            )
-        except ImportError:
-            return
+        exporter_instance = OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
+        provider.add_span_processor(BatchSpanProcessor(exporter_instance))
+        logger.info(
+            "monitoring configured with OTLP exporter (protocol=%s, endpoint=%s, log_level=%s)",
+            protocol,
+            endpoint,
+            log_level,
+        )
 
     trace.set_tracer_provider(provider)
-
-    try:
-        from opentelemetry.instrumentation.logging import LoggingInstrumentor
-
-        LoggingInstrumentor().instrument()
-    except ImportError:
-        pass
+    LoggingInstrumentor().instrument()

@@ -61,23 +61,10 @@ class TestInstrumentSqlalchemy:
             reload(tel)
             tel.instrument_sqlalchemy(async_engine)
 
-        # Verify the async engine itself was NOT passed
         for c in mock_instrumentor.instrument.call_args_list:
             assert c != call(engine=async_engine), (
                 "instrument() must not receive the AsyncEngine directly"
             )
-
-    def test_noop_when_package_missing(self):
-        """No error raised when opentelemetry-instrumentation-sqlalchemy is absent."""
-        with patch.dict(
-            "sys.modules",
-            {"opentelemetry.instrumentation.sqlalchemy": None},
-        ):
-            from importlib import reload
-            import dbt_graphql.api.monitoring as tel
-
-            reload(tel)
-            tel.instrument_sqlalchemy(MagicMock())  # must not raise
 
 
 class TestInstrumentStarlette:
@@ -101,17 +88,6 @@ class TestInstrumentStarlette:
             tel.instrument_starlette(app)
 
         mock_instrumentor.instrument_app.assert_called_once_with(app)
-
-    def test_noop_when_package_missing(self):
-        with patch.dict(
-            "sys.modules",
-            {"opentelemetry.instrumentation.starlette": None},
-        ):
-            from importlib import reload
-            import dbt_graphql.api.monitoring as tel
-
-            reload(tel)
-            tel.instrument_starlette(MagicMock())  # must not raise
 
 
 class TestBuildGraphqlHttpHandler:
@@ -140,22 +116,3 @@ class TestBuildGraphqlHttpHandler:
 
         assert result is mock_handler_instance
         mock_handler_class.assert_called_once_with(extensions=[mock_extension])
-
-    def test_returns_none_when_package_missing(self):
-        import sys
-
-        for key in list(sys.modules):
-            if "ariadne.contrib.tracing" in key:
-                sys.modules.pop(key)
-
-        with patch.dict(
-            "sys.modules",
-            {"ariadne.contrib.tracing.opentelemetry": None},
-        ):
-            from importlib import reload
-            import dbt_graphql.api.monitoring as tel
-
-            reload(tel)
-            result = tel.build_graphql_http_handler()
-
-        assert result is None

@@ -78,11 +78,6 @@ def create_app(
     query_type = create_query_type(registry)
     gql_schema = make_executable_schema(_build_ariadne_sdl(registry), query_type)
 
-    http_handler = build_graphql_http_handler()
-    graphql_kwargs = {}
-    if http_handler is not None:
-        graphql_kwargs["http_handler"] = http_handler
-
     graphql_app = GraphQL(
         gql_schema,
         context_value=lambda req, _data=None: {
@@ -90,7 +85,7 @@ def create_app(
             "registry": registry,
             "db": db,
         },
-        **graphql_kwargs,
+        http_handler=build_graphql_http_handler(),
     )
 
     @asynccontextmanager
