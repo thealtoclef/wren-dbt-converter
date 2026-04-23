@@ -54,8 +54,11 @@ class TestSchemaDiscoveryLiveEnrichment:
         pm = next((c for c in detail.columns if c.name == "payment_method"), None)
         if pm is None:
             pytest.skip("stg_payments.payment_method not found in this fixture")
-        if pm.value_summary is not None:
-            assert pm.value_summary["kind"] in ("distinct", "enum", "range")
+        assert pm.value_summary is not None, (
+            "payment_method has low cardinality and must receive a value_summary"
+        )
+        assert pm.value_summary["kind"] in ("distinct", "enum")
+        assert len(pm.value_summary["values"]) > 0
 
     @pytest.mark.asyncio
     async def test_cache_returns_same_object(self, adapter_env):

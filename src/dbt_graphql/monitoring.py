@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def configure_monitoring(
     service_name: str = "dbt-graphql",
@@ -18,9 +22,11 @@ def configure_monitoring(
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
     except ImportError:
+        logger.warning(
+            "opentelemetry-sdk not installed; monitoring disabled. "
+            "Install with: pip install dbt-graphql[api]"
+        )
         return
-
-    import logging
 
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.getLogger("dbt_graphql").setLevel(level)
@@ -32,6 +38,7 @@ def configure_monitoring(
         from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+        logger.info("monitoring configured with console exporter (log_level=%s)", log_level)
     else:
         try:
             if protocol == "http":
@@ -47,6 +54,12 @@ def configure_monitoring(
                 OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
             )
             provider.add_span_processor(BatchSpanProcessor(exporter_instance))
+            logger.info(
+                "monitoring configured with OTLP exporter (protocol=%s, endpoint=%s, log_level=%s)",
+                protocol,
+                endpoint,
+                log_level,
+            )
         except ImportError:
             return
 

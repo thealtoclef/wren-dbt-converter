@@ -29,7 +29,7 @@ Each response includes `_meta.next_steps` — a short list guiding the agent's n
 
 - Builds a **bidirectional adjacency list** at construction time: every `RelationshipInfo` becomes two edges (outgoing from `from_model`, incoming to `to_model`).
 - `find_path()` runs BFS, early-terminating when a longer path would extend. Returns *all* shortest paths, not just one — an agent benefits from seeing alternatives (`orders → customers` vs. `orders → payments → customers`).
-- Live-DB enrichment (`get_row_count`, `get_distinct_values`, `get_date_range`, `get_sample_rows`) is implemented but not yet wired into tool outputs — future work.
+- `describe_table()` live-enriches results when a DB connection is available: `row_count`, `sample_rows` (3 rows), and per-column `value_summary` (enum, date range, or distinct values depending on SQL type and cardinality). Column enrichment respects an `EnrichmentConfig.budget` cap (default: 20 queries per call). Override via `enrichment.budget` in config or the `DBT_GRAPHQL__ENRICHMENT__BUDGET` env var.
 
 ---
 

@@ -170,16 +170,6 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
         metavar="PATTERN",
         help="Regex pattern to exclude models (mcp only). May be repeated.",
     )
-    parser.add_argument(
-        "--enrich-budget",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Max live DB queries per describe_table call (mcp only). "
-            "Overrides config.yml enrichment.budget (default: 20)."
-        ),
-    )
 
 
 def _parse_targets(raw: str) -> set[str]:
@@ -239,20 +229,13 @@ def _run_serve(args) -> None:
 
     # Build shared db connection for mcp (if config provided)
     db = None
-    enrichment = config.enrichment if config is not None else None
+    from .config import EnrichmentConfig
+
+    enrichment = config.enrichment if config is not None else EnrichmentConfig()
     if "mcp" in targets and config is not None:
         from .compiler.connection import DatabaseManager
 
         db = DatabaseManager(config=config.db)
-
-    if enrichment is not None and args.enrich_budget is not None:
-        from .config import EnrichmentConfig
-
-        enrichment = EnrichmentConfig(
-            budget=args.enrich_budget,
-            distinct_values_limit=enrichment.distinct_values_limit,
-            distinct_values_max_cardinality=enrichment.distinct_values_max_cardinality,
-        )
 
     # Start MCP in a daemon thread when serving both, so the API can block main
     if "mcp" in targets:

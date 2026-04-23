@@ -9,6 +9,7 @@ dependencies = [
     "dbt-artifacts-parser>=0.13.0",
     "dbt-colibri>=0.3.0,<0.4",
     "graphql-core>=3.2.8",
+    "pydantic-settings>=2.0",
     "pyyaml>=6.0.2",
     "sqlalchemy[asyncio]>=2.0.49",
 ]
@@ -23,6 +24,7 @@ api = [
     "granian>=2.7.3",
     "opentelemetry-sdk>=1.41.0",
     "opentelemetry-exporter-otlp>=1.41.0",
+    "opentelemetry-instrumentation-asgi>=0.62b0",
     "opentelemetry-instrumentation-starlette>=0.62b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.62b0",
     "opentelemetry-instrumentation-logging>=0.62b0",

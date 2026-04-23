@@ -281,7 +281,7 @@ class SchemaDiscovery:
         rows = await self._db.execute_text(
             f"SELECT DISTINCT {qc} FROM {qt} LIMIT {limit}"
         )
-        return [r[column] for r in rows]
+        return [next(iter(r.values())) for r in rows]
 
     async def _get_date_range(
         self, table: str, column: str, qi

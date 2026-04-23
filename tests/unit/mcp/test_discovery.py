@@ -121,7 +121,7 @@ class TestExploreRelationships:
         related = d.explore_relationships("orders")
         customers_rel = next((r for r in related if r.name == "customers"), None)
         assert customers_rel is not None
-        assert customers_rel.direction in ("outgoing", "incoming")
+        assert customers_rel.direction == "outgoing"
 
 
 def _make_col(name: str) -> ColumnInfo:
@@ -254,3 +254,52 @@ class TestEnrichmentBudget:
         asyncio.run(d.describe_table("t"))
         col_queries = [q for q in calls if "DISTINCT" in q or "MIN(" in q]
         assert len(col_queries) == 3
+
+    def test_cache_prevents_db_calls_on_second_call(self):
+        calls: list = []
+        db = self._make_mock_db(calls)
+        cols = [ColumnInfo(name="x", type="VARCHAR")]
+        model = ModelInfo(name="t", database="db", schema="main", columns=cols)
+        project = ProjectInfo(project_name="p", adapter_type="duckdb", models=[model])
+        d = SchemaDiscovery(project, db=db)
+        asyncio.run(d.describe_table("t"))
+        calls.clear()
+        asyncio.run(d.describe_table("t"))
+        assert calls == [], "cached result must not re-issue DB queries"
+
+
+class TestDistinctValuesKeyMismatch:
+    """_get_distinct_values must not rely on the result dict key matching the IR column name.
+
+    Some adapters normalise identifier case differently from what dbt stores in
+    catalog.json; using the first value in the result row is always correct.
+    """
+
+    def _make_mismatched_key_db(self):
+        class _MockDb:
+            dialect_name = "postgresql"
+
+            async def execute_text(self, sql: str) -> list[dict]:
+                if "COUNT(*)" in sql:
+                    return [{"cnt": 0}]
+                if "DISTINCT" in sql:
+                    # Simulate DB returning lowercase key; IR name is mixed case.
+                    return [{"customerid": "Alice"}, {"customerid": "Bob"}]
+                return []
+
+        return _MockDb()
+
+    def test_returns_values_when_result_key_differs_from_column_name(self):
+        db = self._make_mismatched_key_db()
+        col = ColumnInfo(name="customerID", type="VARCHAR")
+        model = ModelInfo(name="t", database="db", schema="main", columns=[col])
+        project = ProjectInfo(
+            project_name="p", adapter_type="postgresql", models=[model]
+        )
+        d = SchemaDiscovery(project, db=db)
+        detail = asyncio.run(d.describe_table("t"))
+        assert detail is not None
+        vs = detail.columns[0].value_summary
+        assert vs is not None
+        assert vs["kind"] == "distinct"
+        assert vs["values"] == ["Alice", "Bob"]

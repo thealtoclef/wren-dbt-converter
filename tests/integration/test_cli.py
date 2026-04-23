@@ -121,3 +121,43 @@ def test_cli_no_command_exits_zero():
     with pytest.raises(SystemExit) as exc_info:
         main([])
     assert exc_info.value.code == 0
+
+
+def test_env_var_overrides_enrichment_budget(monkeypatch, tmp_path):
+    """DBT_GRAPHQL__ENRICHMENT__BUDGET env var must override config.yml enrichment.budget."""
+    import dbt_graphql.compiler.connection as conn_mod
+    import dbt_graphql.mcp.server as mcp_server_mod
+
+    captured = {}
+
+    def _fake_serve(_project, *, enrichment=None, **_kwargs):
+        captured["enrichment"] = enrichment
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mcp_server_mod, "serve_mcp", _fake_serve)
+    monkeypatch.setattr(conn_mod, "DatabaseManager", lambda **_kw: None)
+    monkeypatch.setenv("DBT_GRAPHQL__ENRICHMENT__BUDGET", "7")
+
+    config_file = tmp_path / "config.yml"
+    config_file.write_text(
+        "db:\n  type: postgres\n  host: localhost\n  dbname: test\n"
+        "serve:\n  host: 0.0.0.0\n  port: 8080\n"
+        "enrichment:\n  budget: 100\n"
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "serve",
+                "--target",
+                "mcp",
+                "--catalog",
+                str(CATALOG),
+                "--manifest",
+                str(MANIFEST),
+                "--config",
+                str(config_file),
+            ]
+        )
+
+    assert captured["enrichment"].budget == 7
