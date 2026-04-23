@@ -25,7 +25,6 @@ mysql = ["aiomysql>=0.3.2"]
 api = [
     "ariadne>=1.0.1",
     "granian>=2.7.3",
-    "opentelemetry-instrumentation-asgi>=0.62b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.62b0",
     "opentelemetry-instrumentation-starlette>=0.62b0",
 ]
