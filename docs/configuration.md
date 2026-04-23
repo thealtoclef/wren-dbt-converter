@@ -1,6 +1,6 @@
 # Configuration Reference
 
-All configuration is loaded from a single YAML file passed via `--config`. A commented template is in [`config.example.yml`](../config.example.yml).
+All configuration is loaded from a single YAML file passed via `--config`. A full default config is shipped inside the package at [`src/dbt_graphql/config.default.yml`](../src/dbt_graphql/config.default.yml) — copy it and modify as needed.
 
 ---
 
@@ -32,7 +32,7 @@ HTTP server bind config.
 
 ## `enrichment` (optional)
 
-Controls live DB queries issued by `describe_table` in the MCP server. Omit to use defaults.
+Controls live DB queries issued by `describe_table` in the MCP server. See [`config.default.yml`](../src/dbt_graphql/config.default.yml) for default values.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Any field can be overridden at runtime via env var without editing the config fi
 
 ## `monitoring` (optional)
 
-OpenTelemetry configuration and log level. Omit the block (or any sub-block) to use defaults. Signals are configured independently — you can ship only traces, only logs, or any combination.
+OpenTelemetry configuration and log level. Omit the block (or any sub-block) to use defaults from [`config.default.yml`](../src/dbt_graphql/config.default.yml). Signals are configured independently — you can ship only traces, only logs, or any combination.
 
 ### `monitoring.logs`
 

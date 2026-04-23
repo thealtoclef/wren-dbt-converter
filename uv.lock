@@ -544,7 +544,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.4" },
     { name = "granian", marker = "extra == 'api'", specifier = ">=2.7.3" },
     { name = "graphql-core", specifier = ">=3.2.8" },
-    { name = "loguru", specifier = ">=0.7" },
+    { name = "loguru", specifier = ">=0.7.3" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.41.0" },
     { name = "opentelemetry-instrumentation-sqlalchemy", marker = "extra == 'api'", specifier = ">=0.62b0" },
     { name = "opentelemetry-instrumentation-starlette", marker = "extra == 'api'", specifier = ">=0.62b0" },

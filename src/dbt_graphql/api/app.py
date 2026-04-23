@@ -112,6 +112,7 @@ def serve(
     config: DbConfig | None = None,
     host: str = "0.0.0.0",
     port: int = 8080,
+    log_level: str = "info",
 ) -> None:
     """Create and run the app with granian."""
     from granian import Granian
@@ -129,5 +130,5 @@ def serve(
         address=host,
         port=port,
         interface=Interfaces.ASGI,
-        log_enabled=False,
+        log_level=log_level,
     ).serve()

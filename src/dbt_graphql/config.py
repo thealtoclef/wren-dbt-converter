@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _load_defaults() -> dict:
-    ref = importlib.resources.files("dbt_graphql").joinpath("defaults.yml")
+    ref = importlib.resources.files("dbt_graphql").joinpath("config.default.yml")
     return yaml.safe_load(ref.read_text())
 
 
@@ -80,7 +80,9 @@ class MonitoringConfig(BaseModel):
 class EnrichmentConfig(BaseModel):
     budget: int = _DEFAULTS["enrichment"]["budget"]
     distinct_values_limit: int = _DEFAULTS["enrichment"]["distinct_values_limit"]
-    distinct_values_max_cardinality: int = _DEFAULTS["enrichment"]["distinct_values_max_cardinality"]
+    distinct_values_max_cardinality: int = _DEFAULTS["enrichment"][
+        "distinct_values_max_cardinality"
+    ]
 
 
 class AppConfig(BaseSettings):

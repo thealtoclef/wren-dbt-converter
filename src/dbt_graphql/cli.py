@@ -272,4 +272,5 @@ def _run_serve(args) -> None:
             config=config.db,
             host=config.serve.host,
             port=config.serve.port,
+            log_level=config.monitoring.logs.level.lower(),
         )

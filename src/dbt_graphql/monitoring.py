@@ -72,7 +72,7 @@ def _instrument_loguru() -> None:
 
 def _add_otlp_log_sink(config: MonitoringConfig, resource) -> None:
     from opentelemetry._logs import SeverityNumber, set_logger_provider
-    from opentelemetry.sdk._logs import LogRecord, LoggerProvider
+    from opentelemetry.sdk._logs import LoggerProvider
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
     if config.logs.protocol == "http":
@@ -102,21 +102,19 @@ def _add_otlp_log_sink(config: MonitoringConfig, resource) -> None:
         trace_id_str = r["extra"].get("otelTraceID", "0") or "0"
         span_id_str = r["extra"].get("otelSpanID", "0") or "0"
         otel_logger.emit(
-            LogRecord(
-                timestamp=int(r["time"].timestamp() * 1e9),
-                observed_timestamp=int(r["time"].timestamp() * 1e9),
-                severity_number=severity_map.get(r["level"].name, SeverityNumber.INFO),
-                severity_text=r["level"].name,
-                body=r["message"],
-                attributes={
-                    "code.filepath": str(r["file"].path),
-                    "code.lineno": r["line"],
-                    "code.function": r["function"],
-                    "logger.name": r["name"],
-                },
-                trace_id=int(trace_id_str, 16),
-                span_id=int(span_id_str, 16),
-            )
+            timestamp=int(r["time"].timestamp() * 1e9),
+            observed_timestamp=int(r["time"].timestamp() * 1e9),
+            severity_number=severity_map.get(r["level"].name, SeverityNumber.INFO),
+            severity_text=r["level"].name,
+            body=r["message"],
+            attributes={
+                "code.filepath": str(r["file"].path),
+                "code.lineno": r["line"],
+                "code.function": r["function"],
+                "logger.name": r["name"],
+            },
+            trace_id=int(trace_id_str, 16),
+            span_id=int(span_id_str, 16),
         )
 
     logger.add(_otlp_sink, level=config.logs.level.upper())
