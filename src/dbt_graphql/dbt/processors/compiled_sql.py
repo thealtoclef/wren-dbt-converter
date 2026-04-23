@@ -11,7 +11,6 @@ Everything else is internal plumbing shared across the three public extractors.
 from __future__ import annotations
 
 import gc
-import logging
 from typing import Any
 
 from sqlglot import exp, parse_one
@@ -35,7 +34,7 @@ from ...ir.models import (
 )
 from ..artifacts import DbtCatalog, DbtManifest
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 # ---------------------------------------------------------------------------

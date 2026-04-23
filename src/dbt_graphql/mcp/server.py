@@ -2,9 +2,72 @@
 
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, Awaitable, Callable
+
+from loguru import logger
 
 from .discovery import SchemaDiscovery
+
+# OTel metrics instruments for MCP (initialized lazily)
+_meter = None
+_tool_call_counter = None
+_tool_duration_histogram = None
+
+
+def _get_mcp_metrics_instruments():
+    """Get or create OTel metric instruments for MCP tools."""
+    global _meter, _tool_call_counter, _tool_duration_histogram
+
+    if _meter is None:
+        from opentelemetry import metrics
+
+        _meter = metrics.get_meter("dbt_graphql.mcp")
+        _tool_call_counter = _meter.create_counter(
+            name="mcp.tool.calls",
+            description="Total number of MCP tool calls",
+            unit="1",
+        )
+        _tool_duration_histogram = _meter.create_histogram(
+            name="mcp.tool.duration",
+            description="MCP tool call duration in milliseconds",
+            unit="ms",
+        )
+
+    return _tool_call_counter, _tool_duration_histogram
+
+
+def _instrument_tool(tool_name: str, func: Callable) -> Callable:
+    """Wrap an MCP tool function to record metrics.
+
+    Note: FastMCP doesn't support functions with *args, so we must preserve
+    the original function's signature via functools.wraps.
+    """
+    import functools
+    import inspect
+
+    counter, histogram = _get_mcp_metrics_instruments()
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        attributes = {"tool.name": tool_name}
+
+        try:
+            result = func(*args, **kwargs)
+            if isinstance(result, Awaitable):
+                result = await result
+            return result
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            counter.add(1, attributes)
+            histogram.record(duration_ms, attributes)
+
+    # Preserve the original function's signature so FastMCP can inspect it
+    sig = inspect.signature(func)
+    wrapper.__signature__ = sig  # type: ignore[attr-defined]
+
+    return wrapper
 
 
 class McpTools:
@@ -161,12 +224,19 @@ def create_mcp_server(project, db=None, enrichment=None):
     tools = McpTools(project, db=db, enrichment=enrichment)
     mcp = FastMCP("dbt-graphql")
 
-    mcp.tool()(tools.list_tables)
-    mcp.tool()(tools.describe_table)
-    mcp.tool()(tools.find_path)
-    mcp.tool()(tools.explore_relationships)
-    mcp.tool()(tools.build_query)
-    mcp.tool()(tools.execute_query)
+    # Register tools with metrics instrumentation
+    mcp.tool(name="list_tables")(_instrument_tool("list_tables", tools.list_tables))
+    mcp.tool(name="describe_table")(
+        _instrument_tool("describe_table", tools.describe_table)
+    )
+    mcp.tool(name="find_path")(_instrument_tool("find_path", tools.find_path))
+    mcp.tool(name="explore_relationships")(
+        _instrument_tool("explore_relationships", tools.explore_relationships)
+    )
+    mcp.tool(name="build_query")(_instrument_tool("build_query", tools.build_query))
+    mcp.tool(name="execute_query")(
+        _instrument_tool("execute_query", tools.execute_query)
+    )
 
     return mcp
 

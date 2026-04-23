@@ -114,5 +114,11 @@ class TestBuildGraphqlHttpHandler:
             reload(tel)
             result = tel.build_graphql_http_handler()
 
+            extensions_arg = (
+                mock_handler_class.call_args.kwargs.get("extensions")
+                or mock_handler_class.call_args.args[0]
+            )
+            assert mock_extension in extensions_arg
+            assert tel.GraphQLMetricsExtension in extensions_arg
+
         assert result is mock_handler_instance
-        mock_handler_class.assert_called_once_with(extensions=[mock_extension])

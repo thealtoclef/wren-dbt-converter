@@ -9,14 +9,13 @@ so resolvers don't need to close over mutable objects.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from ariadne import QueryType
 
 from ..compiler.query import compile_query
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def create_query_type(registry) -> QueryType:

@@ -197,17 +197,7 @@ def _run_serve(args) -> None:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
 
-    if config is not None:
-        mon = config.monitoring
-        configure_monitoring(
-            service_name=mon.service_name,
-            exporter=mon.exporter,
-            endpoint=mon.endpoint,
-            log_level=mon.log_level,
-            protocol=mon.protocol,
-        )
-    else:
-        configure_monitoring()
+    configure_monitoring(config.monitoring if config is not None else None)
 
     targets = _parse_targets(args.target)
 

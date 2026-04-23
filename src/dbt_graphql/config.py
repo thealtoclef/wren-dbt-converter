@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,12 +21,45 @@ class ServeConfig(BaseModel):
     port: int
 
 
+class TracesConfig(BaseModel):
+    endpoint: str | None = None
+    protocol: str | None = None  # "grpc" or "http"; required when endpoint is set
+
+    @model_validator(mode="after")
+    def _require_protocol_with_endpoint(self) -> "TracesConfig":
+        if self.endpoint and not self.protocol:
+            raise ValueError("monitoring.traces.protocol is required when endpoint is set")
+        return self
+
+
+class MetricsConfig(BaseModel):
+    endpoint: str | None = None
+    protocol: str | None = None
+
+    @model_validator(mode="after")
+    def _require_protocol_with_endpoint(self) -> "MetricsConfig":
+        if self.endpoint and not self.protocol:
+            raise ValueError("monitoring.metrics.protocol is required when endpoint is set")
+        return self
+
+
+class LogsConfig(BaseModel):
+    endpoint: str | None = None
+    protocol: str | None = None
+    level: str = "INFO"
+
+    @model_validator(mode="after")
+    def _require_protocol_with_endpoint(self) -> "LogsConfig":
+        if self.endpoint and not self.protocol:
+            raise ValueError("monitoring.logs.protocol is required when endpoint is set")
+        return self
+
+
 class MonitoringConfig(BaseModel):
     service_name: str = "dbt-graphql"
-    exporter: str = "otlp"
-    protocol: str = "grpc"  # "grpc" or "http"
-    endpoint: str | None = None
-    log_level: str = "INFO"
+    traces: TracesConfig = TracesConfig()
+    metrics: MetricsConfig = MetricsConfig()
+    logs: LogsConfig = LogsConfig()
 
 
 class EnrichmentConfig(BaseModel):

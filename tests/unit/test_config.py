@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from dbt_graphql.config import load_config
+from dbt_graphql.config import LogsConfig, MetricsConfig, TracesConfig, load_config
 
 
 def _write_config(tmp_path: Path, content: str) -> Path:
@@ -61,9 +61,9 @@ class TestEnvVarOverrides:
         assert cfg.db.host == "envhost"
 
     def test_env_overrides_monitoring_log_level(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DBT_GRAPHQL__MONITORING__LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("DBT_GRAPHQL__MONITORING__LOGS__LEVEL", "DEBUG")
         cfg = load_config(_write_config(tmp_path, _MINIMAL_YAML))
-        assert cfg.monitoring.log_level == "DEBUG"
+        assert cfg.monitoring.logs.level == "DEBUG"
 
     def test_env_does_not_bleed_between_tests(self, tmp_path):
         # Env vars from other tests must not carry over (monkeypatch is per-test).
@@ -74,3 +74,39 @@ class TestEnvVarOverrides:
         yaml = _MINIMAL_YAML + "enrichment:\n  budget: 42\n"
         cfg = load_config(_write_config(tmp_path, yaml))
         assert cfg.enrichment.budget == 42
+
+    def test_monitoring_traces_endpoint_from_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DBT_GRAPHQL__MONITORING__TRACES__ENDPOINT", "http://col:4317")
+        monkeypatch.setenv("DBT_GRAPHQL__MONITORING__TRACES__PROTOCOL", "grpc")
+        cfg = load_config(_write_config(tmp_path, _MINIMAL_YAML))
+        assert cfg.monitoring.traces.endpoint == "http://col:4317"
+        assert cfg.monitoring.traces.protocol == "grpc"
+
+    def test_monitoring_defaults_all_endpoints_none(self, tmp_path):
+        cfg = load_config(_write_config(tmp_path, _MINIMAL_YAML))
+        assert cfg.monitoring.traces.endpoint is None
+        assert cfg.monitoring.metrics.endpoint is None
+        assert cfg.monitoring.logs.endpoint is None
+
+
+class TestProtocolValidation:
+    def test_traces_endpoint_without_protocol_raises(self):
+        with pytest.raises(ValueError, match="protocol is required"):
+            TracesConfig(endpoint="http://collector:4317")
+
+    def test_traces_endpoint_with_protocol_valid(self):
+        cfg = TracesConfig(endpoint="http://collector:4317", protocol="grpc")
+        assert cfg.protocol == "grpc"
+
+    def test_traces_no_endpoint_no_protocol_valid(self):
+        cfg = TracesConfig()
+        assert cfg.endpoint is None
+        assert cfg.protocol is None
+
+    def test_metrics_endpoint_without_protocol_raises(self):
+        with pytest.raises(ValueError, match="protocol is required"):
+            MetricsConfig(endpoint="http://collector:4317")
+
+    def test_logs_endpoint_without_protocol_raises(self):
+        with pytest.raises(ValueError, match="protocol is required"):
+            LogsConfig(endpoint="http://collector:4317")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from .monitoring import (
     instrument_starlette,
 )
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 _STANDARD_GQL_SCALARS = {"String", "Int", "Float", "Boolean", "ID"}
 
