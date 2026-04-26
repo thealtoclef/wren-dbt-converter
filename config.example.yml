@@ -54,11 +54,28 @@ serve:
 #     # protocol: http
 
 # -----------------------------------------------------------------------------
-# security (optional) — path to access policy. Without this, the API serves
-# every column and row to every caller. See docs/access-policy.md.
+# security (optional) — access policy + JWT verification.
 # -----------------------------------------------------------------------------
 # security:
-#   policy_path: access.yml
+#   policy_path: access.yml          # see docs/access-policy.md
+#
+#   # JWT verification — disabled by default. When disabled every request is
+#   # treated as anonymous (the policy engine sees an empty payload).
+#   jwt:
+#     enabled: true
+#     algorithms: [RS256]            # required when enabled. Allow-list pinned.
+#     audience: dbt-graphql          # optional, str | list[str]
+#     issuer: https://issuer.example/
+#     leeway: 30                     # seconds; clock-skew tolerance for exp/nbf
+#     required_claims: [exp]         # forced-essential claims
+#     roles_claim: scope             # claim read for Starlette scopes; defaults
+#                                    #   to scope/scp/roles in that order
+#     # exactly one key source:
+#     jwks_url: https://issuer.example/.well-known/jwks.json
+#     jwks_cache_ttl: 3600           # only meaningful with jwks_url
+#     # key_url: https://internal/keys/dbt-graphql.pem
+#     # key_env: JWT_SECRET          # name of env var (NOT the secret)
+#     # key_file: /etc/dbt-graphql/jwt.pem
 
 # -----------------------------------------------------------------------------
 # cache (optional) — result cache + singleflight between HTTP and the warehouse.

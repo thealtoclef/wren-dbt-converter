@@ -101,13 +101,40 @@ Omit the block to use the default in-memory cache. Pass `cache_config=None` prog
 
 ## `security` (optional)
 
-Path to the access-policy file that governs column/row visibility at request
-time. See [access-policy.md](access-policy.md) for the policy language and
-[security.md](security.md) for the JWT auth model.
+Access-policy file plus JWT verification. See
+[access-policy.md](access-policy.md) for the policy language and
+[security.md](security.md) for the auth model.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `policy_path` | Path | `null` | Path to `access.yml`. Omit to serve the API with no access policy (all columns/rows visible). |
+| `jwt` | object | `{enabled: false}` | JWT verification settings (see below). |
+
+### `security.jwt`
+
+When `enabled: false` (the default), the auth backend skips verification
+entirely and treats every request as anonymous — even ones carrying a
+forged token. Use this only for local development.
+
+When `enabled: true`, every request must present a valid `Bearer` token
+or it is rejected with HTTP 401 + `WWW-Authenticate: Bearer
+error="invalid_token"`. Exactly one of `jwks_url`, `key_url`, `key_env`,
+or `key_file` must be set.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Master switch. `false` ⇒ verification skipped, every request anonymous. |
+| `algorithms` | list | `[]` | Required when enabled. Allow-list of accepted JWS algorithms (e.g. `[RS256]`, `[HS256]`). Pinned — `none` and unlisted algorithms are rejected before signature checks run. |
+| `audience` | str \| list | `null` | If set, token's `aud` claim must equal (str) or be a member of (list) this value. |
+| `issuer` | str | `null` | If set, token's `iss` claim must equal this value. |
+| `leeway` | int | `30` | Clock-skew tolerance in seconds for `exp` / `nbf` / `iat`. |
+| `required_claims` | list | `["exp"]` | Claims that must be present. |
+| `roles_claim` | str | `"scope"` | Claim read for Starlette scopes. Space-delimited string or list. Set to `scp`, `roles`, or a namespaced URL for non-OIDC IdPs. |
+| `jwks_url` | URL | `null` | Rotating JWKS endpoint (RS256/ES256). The keyset is cached for `jwks_cache_ttl` seconds and refetched on TTL expiry; concurrent refetches are coalesced. JWKS-fetch failure produces 401, not stale keys. |
+| `jwks_cache_ttl` | int | `3600` | TTL for the in-memory JWKS cache. Only meaningful with `jwks_url`. |
+| `key_url` | URL | `null` | URL of a single static key (PEM or JWK). Fetched once on first request. |
+| `key_env` | str | `null` | **Name** of an environment variable holding the key material (HMAC secret, PEM, or JWK). Not the secret itself. |
+| `key_file` | Path | `null` | Path to a single key file (PEM or JWK). |
 
 ---
 

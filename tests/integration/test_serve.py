@@ -19,6 +19,8 @@ from dbt_graphql.api.policy import (
     TablePolicy,
 )
 
+from .conftest import JWT_TEST_SECRET, make_test_jwt_config
+
 pytest.importorskip("ariadne", reason="ariadne required for serve tests")
 
 
@@ -28,7 +30,7 @@ pytest.importorskip("ariadne", reason="ariadne required for serve tests")
 
 
 def _jwt(payload: dict) -> str:
-    return pyjwt.encode(payload, "test-secret", algorithm="HS256")
+    return pyjwt.encode(payload, JWT_TEST_SECRET, algorithm="HS256")
 
 
 def _bearer(payload: dict) -> dict:
@@ -62,6 +64,7 @@ def client(serve_adapter_env):
     app = create_app(
         db_graphql_path=serve_adapter_env["db_graphql_path"],
         db_url=serve_adapter_env["db_url"],
+        jwt_config=make_test_jwt_config(),
     )
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
@@ -176,6 +179,44 @@ class TestGraphQLHTTP:
         assert data["data"]["customers"] == []
 
 
+class TestAuthHTTP:
+    """Bearer-token verification against the live mounted GraphQL app."""
+
+    def test_invalid_signature_returns_401(self, client):
+        bad = pyjwt.encode({"sub": "u"}, "wrong-secret", algorithm="HS256")
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ customers { customer_id } }"},
+            headers={"Authorization": f"Bearer {bad}"},
+        )
+        assert resp.status_code == 401
+        www = resp.headers["WWW-Authenticate"]
+        assert www.startswith("Bearer ")
+        assert 'error="invalid_token"' in www
+
+    def test_garbage_token_returns_401(self, client):
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ customers { customer_id } }"},
+            headers={"Authorization": "Bearer not.a.jwt"},
+        )
+        assert resp.status_code == 401
+        assert 'error="invalid_token"' in resp.headers["WWW-Authenticate"]
+
+    def test_missing_token_treated_as_anonymous(self, client):
+        """No Authorization header → reaches resolvers as anonymous (200)."""
+        resp = client.post("/graphql", json={"query": "{ customers { customer_id } }"})
+        assert resp.status_code == 200
+
+    def test_non_bearer_scheme_treated_as_anonymous(self, client):
+        resp = client.post(
+            "/graphql",
+            json={"query": "{ customers { customer_id } }"},
+            headers={"Authorization": "Basic dXNlcjpwYXNz"},
+        )
+        assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Policy-aware fixtures
 # ---------------------------------------------------------------------------
@@ -192,6 +233,7 @@ def policy_client(serve_adapter_env):
             db_graphql_path=serve_adapter_env["db_graphql_path"],
             db_url=serve_adapter_env["db_url"],
             access_policy=policy,
+            jwt_config=make_test_jwt_config(),
         )
         return TestClient(app, raise_server_exceptions=True)
 

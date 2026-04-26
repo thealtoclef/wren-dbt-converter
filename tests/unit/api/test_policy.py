@@ -14,7 +14,7 @@ from dbt_graphql.api.policy import (
     load_access_policy,
     render_row_filter,
 )
-from dbt_graphql.api.security import JWTPayload
+from dbt_graphql.api.auth import JWTPayload
 
 
 # ---------------------------------------------------------------------------

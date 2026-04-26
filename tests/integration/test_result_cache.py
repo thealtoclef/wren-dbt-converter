@@ -31,6 +31,8 @@ from dbt_graphql.api.policy import (
 from dbt_graphql.cache import CacheConfig, stats
 from dbt_graphql.cache.setup import close_cache
 
+from .conftest import JWT_TEST_SECRET, make_test_jwt_config
+
 pytest.importorskip("ariadne", reason="ariadne required for serve tests")
 
 
@@ -40,7 +42,11 @@ pytest.importorskip("ariadne", reason="ariadne required for serve tests")
 
 
 def _bearer(payload: dict) -> dict:
-    return {"Authorization": f"Bearer {pyjwt.encode(payload, 's', algorithm='HS256')}"}
+    return {
+        "Authorization": (
+            f"Bearer {pyjwt.encode(payload, JWT_TEST_SECRET, algorithm='HS256')}"
+        )
+    }
 
 
 def _gql(client, query, headers=None):
@@ -97,6 +103,7 @@ def cached_client(serve_adapter_env, _cleanup_cache):
             db_url=serve_adapter_env["db_url"],
             access_policy=access_policy,
             cache_config=cache_cfg if cache_cfg is not None else _cache_config(),
+            jwt_config=make_test_jwt_config(),
         )
         counter = {"n": 0}
         # We retrieve the live DatabaseManager from the app's resolver
@@ -275,6 +282,9 @@ class TestTenantIsolation:
         rotate tokens constantly, but the cache key derives from rendered
         SQL — and the rendered SQL only embeds ``cust_id`` (the claim the
         policy reads). Other claim drift must not invalidate the cache."""
+        import time as _time
+
+        now = int(_time.time())
         client, counter = cached_client(access_policy=self._row_filtered_policy())
         try:
             with client as c:
@@ -282,7 +292,12 @@ class TestTenantIsolation:
                     c,
                     "{ customers { customer_id } }",
                     headers=_bearer(
-                        {"sub": "a", "claims": {"cust_id": 1}, "iat": 1, "exp": 100}
+                        {
+                            "sub": "a",
+                            "claims": {"cust_id": 1},
+                            "iat": now - 10,
+                            "exp": now + 600,
+                        }
                     ),
                 )
                 first = counter["n"]
@@ -290,7 +305,12 @@ class TestTenantIsolation:
                     c,
                     "{ customers { customer_id } }",
                     headers=_bearer(
-                        {"sub": "a", "claims": {"cust_id": 1}, "iat": 999, "exp": 1099}
+                        {
+                            "sub": "a",
+                            "claims": {"cust_id": 1},
+                            "iat": now,
+                            "exp": now + 1200,
+                        }
                     ),
                 )
                 second = counter["n"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, HttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from . import defaults
@@ -79,8 +79,39 @@ class EnrichmentConfig(BaseModel):
     )
 
 
+class JWTConfig(BaseModel):
+    enabled: bool = False
+    algorithms: list[str] = []
+    audience: str | list[str] | None = None
+    issuer: str | None = None
+    leeway: int = defaults.JWT_LEEWAY
+    required_claims: list[str] = ["exp"]
+    roles_claim: str = "scope"
+
+    jwks_url: HttpUrl | None = None
+    jwks_cache_ttl: int = defaults.JWT_JWKS_CACHE_TTL
+    key_url: HttpUrl | None = None
+    key_env: str | None = None
+    key_file: Path | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "JWTConfig":
+        if not self.enabled:
+            return self
+        if not self.algorithms:
+            raise ValueError("security.jwt.algorithms is required when enabled")
+        sources = [self.jwks_url, self.key_url, self.key_env, self.key_file]
+        if sum(s is not None for s in sources) != 1:
+            raise ValueError(
+                "security.jwt requires exactly one of: "
+                "jwks_url, key_url, key_env, key_file"
+            )
+        return self
+
+
 class SecurityConfig(BaseModel):
     policy_path: Path | None = None
+    jwt: JWTConfig = JWTConfig()
 
 
 class AppConfig(BaseSettings):

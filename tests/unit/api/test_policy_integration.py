@@ -22,7 +22,7 @@ from dbt_graphql.api.policy import (
     TableAccessDenied,
     TablePolicy,
 )
-from dbt_graphql.api.security import JWTPayload
+from dbt_graphql.api.auth import JWTPayload
 from dbt_graphql.compiler.query import compile_query
 from dbt_graphql.formatter.schema import (
     ColumnDef,

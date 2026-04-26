@@ -12,7 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 from simpleeval import EvalWithCompoundTypes
 
-from .security import JWTPayload
+from .auth import JWTPayload
 
 
 # ---------------------------------------------------------------------------

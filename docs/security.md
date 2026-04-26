@@ -97,17 +97,22 @@ there — only whether its signature checks out.
 
 ## What we verify (and what we trust)
 
-When Sec-A signature verification lands (see [ROADMAP.md](../ROADMAP.md)),
-the auth backend will enforce:
+The auth backend enforces:
 
 | Check | Meaning |
 |---|---|
-| Signature | JWT was issued by the configured IdP and hasn't been tampered with. HMAC (HS256) via shared secret, or asymmetric (RS256/ES256) via a JWKS endpoint. |
+| Signature | JWT was issued by the configured IdP and hasn't been tampered with. HMAC (HS256) via shared secret, or asymmetric (RS256/ES256) via a JWKS endpoint or a static key. |
 | `alg` allow-list | Reject `none` and any algorithm not explicitly listed — closes the classic `alg=none` downgrade. |
 | `exp` | Token is not expired (with configurable leeway for clock skew). |
 | `nbf` | Token is valid *now* (not-before). |
-| `iss` | Issuer matches the configured IdP (optional but recommended). |
-| `aud` | Audience matches this API (optional but recommended). |
+| `iss` | Issuer matches the configured IdP (optional). |
+| `aud` | Audience matches this API (optional; accepts a list of acceptable audiences). |
+| `required_claims` | Any claim listed here must be present (defaults to `[exp]`). |
+
+On any failure the request is rejected with **HTTP 401** and an
+RFC 6750 `WWW-Authenticate: Bearer error="invalid_token"` header. No
+fallback to anonymous, no last-good-keyset reuse on JWKS outages — a
+broken IdP surfaces as 401, not as silently-degraded auth.
 
 Everything else in the payload — `sub`, `email`, `groups`,
 `claims.org_id`, `claims.region`, … — is **trusted** once the above
@@ -153,10 +158,15 @@ JWT"), avoids a second config surface for anonymous-role mapping, and
 makes the anonymous policy visible in the same file as every other
 policy.
 
-Once Sec-A signature verification lands, a request with an *invalid*
-token (bad signature, expired, wrong issuer) is rejected with HTTP 401
-— it does not fall through to the anonymous policy. Anonymous is "no
-token sent"; invalid is "something tried to lie."
+A request with an *invalid* token (bad signature, expired, wrong
+issuer) is rejected with HTTP 401 — it does not fall through to the
+anonymous policy. Anonymous is "no token sent"; invalid is "something
+tried to lie."
+
+When `security.jwt.enabled` is `false` (the default), verification is
+**skipped entirely** — every request is anonymous, even one carrying a
+forged token. Use this only for local development; production should
+always set `enabled: true` with a real key source.
 
 ---
 
@@ -164,7 +174,9 @@ token sent"; invalid is "something tried to lie."
 
 | Component | Role | File |
 |---|---|---|
-| `JWTAuthBackend` | Reads `Authorization` header, decodes JWT, exposes `request.user.payload`. | [`src/dbt_graphql/api/security.py`](../src/dbt_graphql/api/security.py) |
+| `JWTAuthBackend` | Reads `Authorization` header, delegates to `Verifier`, exposes `request.user.payload`. | [`src/dbt_graphql/api/auth/backend.py`](../src/dbt_graphql/api/auth/backend.py) |
+| `Verifier` | joserfc-backed signature + claims validation; emits OTel `auth.jwt` outcomes. | [`src/dbt_graphql/api/auth/verifier.py`](../src/dbt_graphql/api/auth/verifier.py) |
+| `JWKSResolver` / `StaticKeyResolver` | Key sources: rotating JWKS or a single static key (env / file / URL). | [`src/dbt_graphql/api/auth/keys.py`](../src/dbt_graphql/api/auth/keys.py) |
 | `AuthenticationMiddleware` | Starlette middleware that runs `JWTAuthBackend` per request. | [`src/dbt_graphql/api/app.py`](../src/dbt_graphql/api/app.py) |
 | `PolicyEngine` | Evaluates `access.yml` against the payload, returns a `ResolvedPolicy`. | [`src/dbt_graphql/api/policy.py`](../src/dbt_graphql/api/policy.py) |
 | `compile_query` | Applies the `ResolvedPolicy` — strips blocked columns, rewrites masks, appends `WHERE`. | [`src/dbt_graphql/compiler/query.py`](../src/dbt_graphql/compiler/query.py) |
@@ -175,7 +187,7 @@ token sent"; invalid is "something tried to lie."
 
 - [access-policy.md](access-policy.md) — policy language, `when:` /
   `row_level:` reference, evaluation model.
-- [configuration.md](configuration.md) — `security.policy_path`
-  (and the upcoming `security.jwt` block for Sec-A).
+- [configuration.md](configuration.md) — `security.policy_path` and
+  the `security.jwt` block (algorithms, audience, issuer, key source).
 - [../ROADMAP.md](../ROADMAP.md) — Sec-A through Sec-L security
   roadmap.

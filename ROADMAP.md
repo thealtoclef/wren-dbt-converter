@@ -16,7 +16,7 @@ Centralized tracking for all planned features. Sections are ordered by priority 
 | 5 | Docs + env-var config | ✅ Done |
 | — | dbt Selector Support (`--select`) | 🔲 Pending |
 | — | Source Node Inclusion (`catalog.sources`) | 🔲 Pending |
-| Sec-A | Identity & JWT Auth | 🟨 Trust-only shipped — see [docs/plans/sec-a-jwt-auth.md](docs/plans/sec-a-jwt-auth.md) |
+| Sec-A | Identity & JWT Auth | ✅ Done (joserfc verifier; JWKS + static sources) |
 | Sec-B | RBAC + Column-Level Security | ✅ Done |
 | Sec-C | Row-Level Security | 🟨 Core shipped |
 | Sec-D | Data Masking | 🟨 Core shipped |
@@ -193,7 +193,7 @@ The two primary references for this design:
 
 ---
 
-### Sec-A — Identity & JWT Auth 🟨 Trust-only shipped
+### Sec-A — Identity & JWT Auth ✅ Done
 
 **Design — OAuth 2.0 Resource Server.** dbt-graphql is a **Resource
 Server**, not an Authorization Server. An external identity provider
@@ -205,60 +205,41 @@ session cookie → JWT, mTLS → JWT) belongs in a reverse proxy or a
 sidecar service that sits in front of us — from our POV the wire
 format is always `Authorization: Bearer <jwt>`.
 
-This is the Cube.dev model (see
-[Cube JWT auth docs](https://cube.dev/docs/product/auth/methods/jwt))
-and the same split used by Hasura, Envoy's JWT filter, the Kubernetes
-API server, and every OAuth 2.0 resource server.
+**Reference:** [`docs/security.md`](docs/security.md),
+[`docs/configuration.md#securityjwt`](docs/configuration.md).
 
-**Status of shipped pieces (`77f86c2`, `ef417d6`):**
-- `JWTAuthBackend` wired into Starlette's `AuthenticationMiddleware`
-- PyJWT dependency
-- `JWTPayload` dot-access wrapper available to `when:` and `row_level:`
-- HTTP integration tests in `tests/integration/test_policy_http.py`
-
-**Important caveat:** the current backend passes
-`options={"verify_signature": False}` — it trusts whatever JWT the
-client sends. Signature verification is the one item blocking a real
-production story. Do not expose the API to untrusted networks until
-the verification work below is done.
-
-**Detailed plan:** [`docs/plans/sec-a-jwt-auth.md`](docs/plans/sec-a-jwt-auth.md).
-Library: **joserfc** (PyJWT and `authlib.jose` rejected — see plan §13).
-Key sources: `jwks_url` (first-class, rotating set) | `key_url` | `key_env` | `key_file`
-(mutually exclusive, validated at config load). No trust-only mode —
+Library: **joserfc** for JWS/JWT/JWK primitives (Authlib successor by
+the same author; `authlib.jose` is deprecated, PyJWT lacks first-class
+JWKS rotation). Key sources: `jwks_url` (rotating set) | `key_url` |
+`key_env` | `key_file` (mutually exclusive, validated at config load).
 `enabled: false` skips verification entirely and treats every request
-as anonymous.
+as anonymous — there is no trust-only / signature-skipping decode mode.
 
-**Explicitly out of scope for Sec-A:**
+**Explicitly out of scope:**
 - API keys — resource servers don't mint credentials. If a caller
   needs a long-lived token, they get one from the Authorization Server
   and send it as a JWT. A middleware in front of us can translate API
   keys to JWTs on the fly.
 - `anonymous_role` config — "no/invalid token" is already expressible
   in policy via `when: "jwt.sub == None"`. No config wiring needed.
-- Login / password / session handling — this is an Authorization
-  Server concern, not a Resource Server concern.
+- Login / password / session handling — Authorization Server concern.
 - Programmatic / callable key resolvers — deferred to Sec-M
   (Python-overrides hook), where Vault/KMS/HSM integration is solved
-  once for all extension points, not just JWT keys.
-
-**Checklist** (mirrors plan §10):
+  once for all extension points.
 
 | Item | Status |
 |---|---|
-| `JWTAuthBackend` + Starlette middleware (trust-only) | ✅ — to be removed |
+| `JWTConfig` Pydantic schema with mutually-exclusive key source validation | ✅ |
+| `auth/` package: `backend.py`, `verifier.py`, `keys.py` | ✅ |
+| `StaticKeyResolver` (env / file / url) + joserfc verifier | ✅ |
+| Algorithm allow-list pinning (alg-confusion regression test) | ✅ |
+| `exp` / `nbf` / `aud` / `iss` / `required_claims` validation with `leeway` | ✅ |
+| RFC 6750 fail-closed: 401 + `WWW-Authenticate: Bearer error="invalid_token"` | ✅ |
+| `JWKSResolver` (httpx async + monotonic TTL + asyncio.Lock coalescing) | ✅ |
+| Configurable `roles_claim` for scope extraction (defaults to `scope`) | ✅ |
+| OTel `auth.jwt` counter with outcome attribute | ✅ |
 | `JWTPayload` dot-access available in `when:` / `row_level:` | ✅ |
-| HTTP integration tests for policy + JWT | ✅ |
-| `JWTConfig` Pydantic schema with mutually-exclusive key source validation | 🔲 |
-| `auth/` package layout: `backend.py`, `verifier.py`, `keys.py`, `factory.py` | 🔲 |
-| `StaticKeyResolver` (env / file / url) + joserfc verifier | 🔲 |
-| Algorithm allow-list pinning (alg-confusion regression test) | 🔲 |
-| `exp` / `nbf` / `aud` / `iss` / `required_claims` validation with `leeway` | 🔲 |
-| RFC 6750 fail-closed: 401 + `WWW-Authenticate: Bearer error="invalid_token"` | 🔲 |
-| `JWKSResolver` (httpx async + `cachetools.TTLCache` + last-good fallback) | 🔲 |
-| Scope extraction (`scope` / `scp` / `roles` / configurable `roles_claim`) | 🔲 |
-| OTel `auth.jwt` counter with outcome attribute | 🔲 |
-| Remove trust-only path; switch to `joserfc`; drop PyJWT | 🔲 |
+| HTTP integration tests for policy + JWT (PostgreSQL + MySQL) | ✅ |
 
 ---
 
@@ -614,4 +595,4 @@ YAML-only.
 | Short names vs `unique_id` in lineage (Phase 0) | Deferred — relevant only when multi-package projects are encountered |
 | Row-filter template engine | Jinja2 `SandboxedEnvironment` with `finalize=` hook. Every `{{ expression }}` becomes a SQL bind param; values never hit the rendered SQL. |
 | `when:` evaluator | `simpleeval` — AST-based, rejects dunders + builtins, keeps the Python-flavored syntax operators already use. |
-| JWT verification (Sec-A) | Shipped unverified in dev only — base64 decode. Signature verification is mandatory before `access.yml` is relied on for production data; gated on Sec-A. |
+| JWT verification (Sec-A) | joserfc-backed signature + claims validation. JWKS rotating set or static key source. `enabled: false` skips verification entirely (dev only). |

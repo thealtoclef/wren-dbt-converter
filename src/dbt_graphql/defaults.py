@@ -23,3 +23,7 @@ MONITORING_LOG_LEVEL: Final[str] = "INFO"
 CACHE_DEFAULT_URL: Final[str] = "mem://?size=10000"
 CACHE_TTL: Final[int] = 60
 CACHE_LOCK_SAFETY_TIMEOUT: Final[int] = 60
+
+# JWT — clock-skew tolerance and JWKS cache TTL.
+JWT_LEEWAY: Final[int] = 30
+JWT_JWKS_CACHE_TTL: Final[int] = 3600

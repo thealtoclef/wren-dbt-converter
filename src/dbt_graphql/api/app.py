@@ -12,8 +12,9 @@ from starlette.routing import Mount
 
 from ..cache import CacheConfig, close_cache, setup_cache
 from ..compiler.connection import DatabaseManager
-from ..config import AppConfig, DbConfig
+from ..config import AppConfig, DbConfig, JWTConfig
 from ..formatter.schema import TableRegistry, load_db_graphql
+from .auth import auth_on_error, build_auth_backend
 from .monitoring import (
     build_graphql_http_handler,
     instrument_sqlalchemy,
@@ -21,7 +22,6 @@ from .monitoring import (
 )
 from .policy import AccessPolicy, PolicyEngine
 from .resolvers import create_query_type
-from .security import JWTAuthBackend
 
 from loguru import logger
 
@@ -76,6 +76,7 @@ def create_app(
     config: DbConfig | None = None,
     access_policy: AccessPolicy | None = None,
     cache_config: CacheConfig | None = None,
+    jwt_config: JWTConfig,
 ) -> Starlette:
     """Build a Starlette app with Ariadne GraphQL mounted at ``/graphql``.
 
@@ -103,6 +104,8 @@ def create_app(
         http_handler=build_graphql_http_handler(),
     )
 
+    auth_backend, owned_http = build_auth_backend(jwt_config)
+
     @asynccontextmanager
     async def lifespan(_app: Starlette):
         logger.info("connecting to database")
@@ -114,13 +117,21 @@ def create_app(
         yield
         if cache_config is not None:
             await close_cache()
+        if owned_http is not None:
+            await owned_http.aclose()
         await db.close()
         logger.info("database connection closed")
 
     app = Starlette(
         lifespan=lifespan,
         routes=[Mount("/graphql", graphql_app)],
-        middleware=[Middleware(AuthenticationMiddleware, backend=JWTAuthBackend())],
+        middleware=[
+            Middleware(
+                AuthenticationMiddleware,
+                backend=auth_backend,
+                on_error=auth_on_error,
+            )
+        ],
     )
     instrument_starlette(app)
     return app
@@ -149,6 +160,7 @@ def serve(
         config=config.db,
         access_policy=access_policy,
         cache_config=config.cache,
+        jwt_config=config.security.jwt,
     )
     host = config.serve.host
     port = config.serve.port

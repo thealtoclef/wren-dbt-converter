@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
@@ -9,6 +10,24 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+
+from dbt_graphql.config import JWTConfig
+
+# Shared HMAC secret for HTTP integration tests. Set early so any
+# StaticKeyResolver.from_env constructed during create_app() can find it.
+JWT_TEST_SECRET = "integration-test-secret-32-bytes-padding!!"
+os.environ.setdefault("JWT_TEST_SECRET", JWT_TEST_SECRET)
+
+
+def make_test_jwt_config() -> JWTConfig:
+    """JWTConfig used by integration tests: HS256, key sourced from env."""
+    return JWTConfig(
+        enabled=True,
+        algorithms=["HS256"],
+        key_env="JWT_TEST_SECRET",
+        required_claims=[],  # tests sign tokens without `exp`
+    )
+
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 JAFFLE = FIXTURES / "jaffle-shop"
