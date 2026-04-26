@@ -64,6 +64,10 @@ dbt-graphql serve \
 - [**Architecture & Design**](docs/architecture.md) — pipeline, design principles, and landscape comparison.
 - [**Schema Synthesis**](docs/schema-synthesis.md) — dbt extraction, IR, formatter, and lineage in depth.
 - [**API & Compiler**](docs/api.md) — GraphQL→SQL compiler and HTTP API layer.
+- [**Caching & Burst Protection**](docs/caching.md) — result cache + singleflight between resolver and warehouse.
+- [**Access Policy**](docs/access-policy.md) — RBAC, row-level filters, and column-level masking.
+- [**Security**](docs/security.md) — threat model and the cross-tenant isolation contract.
+- [**Configuration Reference**](docs/configuration.md) — operator-facing config surface.
 - [**MCP Server**](docs/mcp.md) — tools, discovery engine, and observability.
 - [**Roadmap**](ROADMAP.md)
 
