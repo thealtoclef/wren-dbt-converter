@@ -14,7 +14,7 @@ See [architecture.md](architecture.md) for where the cache sits in the overall p
 - [2. The flow](#2-the-flow)
 - [3. Cache-key derivation](#3-cache-key-derivation)
 - [4. Multi-tenant correctness — the key claim](#4-multi-tenant-correctness--the-key-claim)
-- [5. Per-table TTLs](#5-per-table-ttls)
+- [5. TTL](#5-ttl)
 - [6. Self-protection — what the cache does and does not defend against](#6-self-protection--what-the-cache-does-and-does-not-defend-against)
 - [7. Observability](#7-observability)
 - [8. Backend](#8-backend)
@@ -70,9 +70,9 @@ Warehouse (only on miss while holding the lock)
 The execution path is twelve lines:
 
 ```python
-async def execute_with_cache(stmt, *, dialect_name, table_names, runner, cfg):
+async def execute_with_cache(stmt, *, dialect_name, runner, cfg):
     key = hash_sql(stmt, dialect_name)
-    ttl = resolve_ttl(table_names, cfg)
+    ttl = cfg.ttl
 
     # Fast path — TTL hit.
     cached = await cache.get(key)
@@ -80,7 +80,7 @@ async def execute_with_cache(stmt, *, dialect_name, table_names, runner, cfg):
         return cached
 
     # Slow path — coalesce concurrent misses through a lock.
-    async with cache.lock(f"{key}:lock", expire=cfg.lock_safety_timeout_s):
+    async with cache.lock(f"{key}:lock", expire=cfg.lock_safety_timeout):
         cached = await cache.get(key)         # re-check inside the lock
         if cached is not None:
             return cached
@@ -97,7 +97,7 @@ Behavior matrix:
 | Cold start, 100 concurrent identical | Lock coalesces — 1 warehouse hit, 99 wake to populated cache |
 | TTL boundary, 100 concurrent identical | Lock coalesces — 1 warehouse hit |
 | Distinct queries, different keys | Independent paths, no contention |
-| Lock-holder crashes mid-execution | `expire=lock_safety_timeout_s` (default `60`) auto-releases; next caller retries |
+| Lock-holder crashes mid-execution | `expire=lock_safety_timeout` (default `60`) auto-releases; next caller retries |
 
 The lock's `expire=` is the **safety timeout** — auto-release after a lock-holder crash. It is **not** the result TTL. Both are configurable independently.
 
@@ -140,23 +140,18 @@ There is no separate "tenant key" or claim-tracking machinery. Cross-tenant safe
 
 ---
 
-## 5. Per-table TTLs
+## 5. TTL
 
-Operators decide freshness per table:
+A single global freshness window:
 
 ```yaml
 cache:
-  result:
-    default_ttl_s: 60
-    per_table_ttl_s:
-      orders: 30                # 30 s — rapidly changing
-      daily_revenue: 3600       # 1 h — slow-moving aggregate
-      user_sessions: 0          # realtime; see below
+  ttl: 60   # seconds
 ```
 
-`resolve_ttl()` takes the **strictest** TTL across all tables touched by a query (this includes `default_ttl_s` as one of the candidates). The most-fresh-required table wins — correctness over hit rate.
+Per-table TTLs were considered and dropped: scattering freshness rules across the operator config is fragile and disconnects the freshness decision from the dbt model that defines the table. If per-table freshness becomes necessary, it should be expressed alongside the model definition — not in a parallel YAML block in the API config.
 
-Special value: **`0` = realtime + minimal coalescing window.** The cache still acquires the singleflight lock so a concurrent burst is coalesced into one warehouse call, but the result is persisted for only 1 second (just long enough for the lock-waiters to wake to a populated cache). After that, the entry expires and the next request re-fetches.
+Special value: **`ttl: 0` = realtime + minimal coalescing window.** The cache still acquires the singleflight lock so a concurrent burst is coalesced into one warehouse call, but the result is persisted for only 1 second (just long enough for the lock-waiters to wake to a populated cache). After that, the entry expires and the next request re-fetches.
 
 ---
 
@@ -167,7 +162,7 @@ Special value: **`0` = realtime + minimal coalescing window.** The cache still a
 | Burst of identical queries → warehouse stampede | **Lock coalesces to 1 warehouse call.** |
 | Burst of distinct queries → warehouse pool exhaustion | **Not mitigated.** SQLAlchemy pool sizing applies; the (N+1)th request blocks on pool checkout. Acceptable: clients see latency, server stays up. |
 | Slow client + long warehouse query → connection held | Asyncio handles thousands of idle waiters cheaply. Client timeout is the client's responsibility. |
-| Lock-holder crash mid-query | `lock_safety_timeout_s` (default `60`) auto-releases the lock. |
+| Lock-holder crash mid-query | `lock_safety_timeout` (default `60`) auto-releases the lock. |
 | Memory growth from queued waiters | Bounded by the HTTP server's max in-flight requests (Granian's worker concurrency). |
 | Cache poisoning via crafted JWT | Key embeds bound row-filter values directly (§ 4). |
 
@@ -219,4 +214,4 @@ The lock key uses the same prefix as the cache value (`{key}:lock`, not `lock:{k
 - **No refresh-key invalidation (Cube-style).** Probes hit the warehouse on their own schedule and create coordination problems at scale. Wall-clock TTL is sufficient for a dbt-backed analytics API where data updates on dbt's schedule.
 - **No mutation-driven invalidation.** Writes don't flow through dbt-graphql; they happen via dbt jobs out-of-band. Nothing to invalidate on.
 - **No Automatic Persisted Queries (APQ).** Not in the GraphQL spec; an Apollo extension.
-- **No per-query `@cached(ttl:)` directive override.** Per-table TTL covers 95% of cases. Add later if operators ask.
+- **No per-query `@cached(ttl:)` directive override.** A single global TTL covers the common case. Per-table freshness, if ever needed, belongs alongside the dbt model definition — not as a parallel block in the operator config.

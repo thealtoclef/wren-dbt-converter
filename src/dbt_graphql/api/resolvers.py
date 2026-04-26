@@ -65,7 +65,6 @@ def _make_resolver(table_name: str):
             rows = await execute_with_cache(
                 stmt,
                 dialect_name=dialect,
-                table_names=(table_name,),
                 runner=db.execute,
                 cfg=cache_cfg,
             )

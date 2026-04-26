@@ -21,5 +21,5 @@ MONITORING_LOG_LEVEL: Final[str] = "INFO"
 # Cache — result cache + singleflight. All knobs the operator might want
 # to touch live here.
 CACHE_DEFAULT_URL: Final[str] = "mem://?size=10000"
-CACHE_DEFAULT_TTL_S: Final[int] = 60
-CACHE_LOCK_SAFETY_TIMEOUT_S: Final[int] = 60
+CACHE_TTL: Final[int] = 60
+CACHE_LOCK_SAFETY_TIMEOUT: Final[int] = 60

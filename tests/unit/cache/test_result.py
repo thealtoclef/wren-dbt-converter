@@ -6,7 +6,7 @@ The most behavior-sensitive piece. Tests pin:
 2. Burst protection: 100 concurrent identical requests → exactly 1
    warehouse call. Asserted via a counter on the runner.
 3. Distinct queries do not block each other.
-4. Per-table TTL semantics (incl. ``0`` = realtime + minimal coalescing).
+4. TTL semantics (incl. ``ttl=0`` = realtime + minimal coalescing).
 5. TTL expiry triggers a fresh fetch.
 6. Lock-holder failure (simulated): exception propagates and the lock
    releases so the next caller can succeed.
@@ -24,7 +24,7 @@ import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, select
 
 from dbt_graphql.cache import CacheConfig, stats
-from dbt_graphql.cache.result import execute_with_cache, resolve_ttl
+from dbt_graphql.cache.result import execute_with_cache
 
 
 def _stmt(value: str = "alice"):
@@ -60,9 +60,8 @@ class TestSteadyState:
         rows = await execute_with_cache(
             _stmt(),
             dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
-            cfg=CacheConfig(default_ttl_s=60),
+            cfg=CacheConfig(ttl=60),
         )
         assert runner.calls == 1
         assert rows == [{"id": 1}]
@@ -72,12 +71,11 @@ class TestSteadyState:
     async def test_repeat_within_ttl_hits(self, fresh_cache):
         runner = CountingRunner()
         s = _stmt()
-        cfg = CacheConfig(default_ttl_s=60)
+        cfg = CacheConfig(ttl=60)
         for _ in range(5):
             await execute_with_cache(
                 s,
                 dialect_name="postgresql",
-                table_names=("u",),
                 runner=runner,
                 cfg=cfg,
             )
@@ -88,19 +86,17 @@ class TestSteadyState:
     @pytest.mark.asyncio
     async def test_distinct_bound_params_independent_entries(self, fresh_cache):
         runner = CountingRunner()
-        cfg = CacheConfig(default_ttl_s=60)
+        cfg = CacheConfig(ttl=60)
         # Two distinct parameter values → two SQL hashes → two warehouse calls.
         await execute_with_cache(
             _stmt("alice"),
             dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
             cfg=cfg,
         )
         await execute_with_cache(
             _stmt("bob"),
             dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
             cfg=cfg,
         )
@@ -121,13 +117,12 @@ class TestSingleflight:
         # arrive and we'd see TTL hits instead of coalesced wakes.
         runner = CountingRunner(result=[{"id": 42}], delay=0.05)
         s = _stmt()
-        cfg = CacheConfig(default_ttl_s=60)
+        cfg = CacheConfig(ttl=60)
 
         async def one():
             return await execute_with_cache(
                 s,
                 dialect_name="postgresql",
-                table_names=("u",),
                 runner=runner,
                 cfg=cfg,
             )
@@ -145,13 +140,12 @@ class TestSingleflight:
     async def test_distinct_queries_do_not_serialize(self, fresh_cache):
         """Different keys → independent locks → all run in parallel."""
         runner = CountingRunner(delay=0.05)
-        cfg = CacheConfig(default_ttl_s=60)
+        cfg = CacheConfig(ttl=60)
 
         async def one(name):
             return await execute_with_cache(
                 _stmt(name),
                 dialect_name="postgresql",
-                table_names=("u",),
                 runner=runner,
                 cfg=cfg,
             )
@@ -177,11 +171,10 @@ class TestTtl:
     async def test_ttl_expiry_refetches(self, fresh_cache):
         runner = CountingRunner()
         s = _stmt()
-        cfg = CacheConfig(default_ttl_s=1)
+        cfg = CacheConfig(ttl=1)
         await execute_with_cache(
             s,
             dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
             cfg=cfg,
         )
@@ -189,29 +182,6 @@ class TestTtl:
         await execute_with_cache(
             s,
             dialect_name="postgresql",
-            table_names=("u",),
-            runner=runner,
-            cfg=cfg,
-        )
-        assert runner.calls == 2
-
-    @pytest.mark.asyncio
-    async def test_per_table_ttl_overrides_default(self, fresh_cache):
-        cfg = CacheConfig(default_ttl_s=60, per_table_ttl_s={"u": 1})
-        runner = CountingRunner()
-        s = _stmt()
-        await execute_with_cache(
-            s,
-            dialect_name="postgresql",
-            table_names=("u",),
-            runner=runner,
-            cfg=cfg,
-        )
-        await asyncio.sleep(1.2)
-        await execute_with_cache(
-            s,
-            dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
             cfg=cfg,
         )
@@ -219,8 +189,8 @@ class TestTtl:
 
     @pytest.mark.asyncio
     async def test_ttl_zero_still_coalesces(self, fresh_cache):
-        """``per_table_ttl_s=0`` → coalesce, but only briefly persist."""
-        cfg = CacheConfig(default_ttl_s=60, per_table_ttl_s={"u": 0})
+        """``ttl=0`` → coalesce, but only briefly persist."""
+        cfg = CacheConfig(ttl=0)
         runner = CountingRunner(delay=0.05)
         s = _stmt()
 
@@ -228,7 +198,6 @@ class TestTtl:
             return await execute_with_cache(
                 s,
                 dialect_name="postgresql",
-                table_names=("u",),
                 runner=runner,
                 cfg=cfg,
             )
@@ -236,18 +205,6 @@ class TestTtl:
         await asyncio.gather(*(one() for _ in range(20)))
         # All 20 coalesced into one warehouse call.
         assert runner.calls == 1
-
-    def test_resolve_ttl_takes_strictest(self):
-        cfg = CacheConfig(
-            default_ttl_s=60,
-            per_table_ttl_s={"a": 30, "b": 5, "c": 600},
-        )
-        # min wins across explicitly configured tables + the default
-        assert resolve_ttl(("a", "b", "c"), cfg) == 5
-        # Tables not in per_table_ttl_s don't contribute → default
-        assert resolve_ttl(("xx",), cfg) == 60
-        # Mix: configured table overrides
-        assert resolve_ttl(("a", "xx"), cfg) == 30
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +215,7 @@ class TestTtl:
 class TestFailures:
     @pytest.mark.asyncio
     async def test_runner_exception_propagates_and_lock_releases(self, fresh_cache):
-        cfg = CacheConfig(default_ttl_s=60)
+        cfg = CacheConfig(ttl=60)
         s = _stmt()
 
         class BoomFirst:
@@ -276,7 +233,6 @@ class TestFailures:
             await execute_with_cache(
                 s,
                 dialect_name="postgresql",
-                table_names=("u",),
                 runner=runner,
                 cfg=cfg,
             )
@@ -285,7 +241,6 @@ class TestFailures:
         rows = await execute_with_cache(
             s,
             dialect_name="postgresql",
-            table_names=("u",),
             runner=runner,
             cfg=cfg,
         )

@@ -94,9 +94,8 @@ Omit the block to use the default in-memory cache. Pass `cache_config=None` prog
 |---|---|---|---|
 | `enabled` | bool | `true` | Disable to bypass the cache entirely (no caching, no coalescing). |
 | `url` | string | `"mem://?size=10000"` | [cashews](https://github.com/Krukov/cashews) URI. Examples: `mem://?size=N`, `redis://host:6379/0`, `redis://...?cluster=true`. Use a Redis URI for multi-replica deployments — both the cache and the singleflight lock then live on the shared backend, so coalescing crosses replicas. |
-| `default_ttl_s` | int | `60` | TTL applied to any table not in `per_table_ttl_s`. |
-| `per_table_ttl_s` | dict[str, int] | `{}` | Per-table TTL overrides. `0` = realtime + 1 s coalescing window; see caching.md. The strictest TTL across all tables touched by a query wins. |
-| `lock_safety_timeout_s` | int | `60` | Singleflight lock auto-release. Set above the slowest plausible warehouse query. **Not** the result TTL. |
+| `ttl` | int | `60` | Freshness window in seconds. `0` = realtime + 1 s coalescing window; see caching.md. |
+| `lock_safety_timeout` | int | `60` | Singleflight lock auto-release, in seconds. Set above the slowest plausible warehouse query. **Not** the result TTL. |
 
 ---
 

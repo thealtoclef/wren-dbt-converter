@@ -56,11 +56,10 @@ def _gql(client, query, headers=None):
 # ---------------------------------------------------------------------------
 
 
-def _cache_config(per_table=None, ttl=60) -> CacheConfig:
+def _cache_config(ttl=60) -> CacheConfig:
     return CacheConfig(
         url="mem://?size=1000",
-        default_ttl_s=ttl,
-        per_table_ttl_s=per_table or {},
+        ttl=ttl,
     )
 
 
