@@ -16,7 +16,7 @@ Centralized tracking for all planned features. Sections are ordered by priority 
 | 5 | Docs + env-var config | ✅ Done |
 | — | dbt Selector Support (`--select`) | 🔲 Pending |
 | — | Source Node Inclusion (`catalog.sources`) | 🔲 Pending |
-| Sec-A | Identity & JWT Auth | 🟨 Trust-only shipped (signature verification pending) |
+| Sec-A | Identity & JWT Auth | 🟨 Trust-only shipped — see [docs/plans/sec-a-jwt-auth.md](docs/plans/sec-a-jwt-auth.md) |
 | Sec-B | RBAC + Column-Level Security | ✅ Done |
 | Sec-C | Row-Level Security | 🟨 Core shipped |
 | Sec-D | Data Masking | 🟨 Core shipped |
@@ -28,6 +28,7 @@ Centralized tracking for all planned features. Sections are ordered by priority 
 | Sec-K | Hot reload of access.yml | 🔲 Planned |
 | Sec-L | Policy test harness + `policy explain` CLI | 🔲 Planned |
 | Sec-J | Caching & burst protection (parsed-doc + compiled-plan + result cache + singleflight) | 🔲 Planned — see [docs/plans/sec-j-caching.md](docs/plans/sec-j-caching.md) |
+| Sec-M | Python extension hooks (Superset-style overrides file) | 🔲 Placeholder |
 
 ---
 
@@ -221,19 +222,12 @@ client sends. Signature verification is the one item blocking a real
 production story. Do not expose the API to untrusted networks until
 the verification work below is done.
 
-**Remaining work — config additions (`config.yml`):**
-```yaml
-security:
-  jwt:
-    # Option A: shared-secret HMAC (HS256/384/512)
-    secret: "env:JWT_SECRET"
-    # Option B: asymmetric via JWKS (RS256/ES256)
-    jwks_url: "https://example.auth0.com/.well-known/jwks.json"
-    algorithms: [RS256]               # allow-list of acceptable algs
-    audience: "dbt-graphql"           # optional aud check
-    issuer: "https://example.auth0.com/"  # optional iss check
-    leeway_s: 30                      # clock-skew tolerance for exp/nbf
-```
+**Detailed plan:** [`docs/plans/sec-a-jwt-auth.md`](docs/plans/sec-a-jwt-auth.md).
+Library: **joserfc** (PyJWT and `authlib.jose` rejected — see plan §13).
+Key sources: `jwks_url` (first-class, rotating set) | `key_url` | `key_env` | `key_file`
+(mutually exclusive, validated at config load). No trust-only mode —
+`enabled: false` skips verification entirely and treats every request
+as anonymous.
 
 **Explicitly out of scope for Sec-A:**
 - API keys — resource servers don't mint credentials. If a caller
@@ -244,18 +238,27 @@ security:
   in policy via `when: "jwt.sub == None"`. No config wiring needed.
 - Login / password / session handling — this is an Authorization
   Server concern, not a Resource Server concern.
+- Programmatic / callable key resolvers — deferred to Sec-M
+  (Python-overrides hook), where Vault/KMS/HSM integration is solved
+  once for all extension points, not just JWT keys.
+
+**Checklist** (mirrors plan §10):
 
 | Item | Status |
 |---|---|
-| `JWTAuthBackend` + Starlette middleware (trust-only) | ✅ |
+| `JWTAuthBackend` + Starlette middleware (trust-only) | ✅ — to be removed |
 | `JWTPayload` dot-access available in `when:` / `row_level:` | ✅ |
-| PyJWT dependency | ✅ |
 | HTTP integration tests for policy + JWT | ✅ |
-| `security.jwt` pydantic config | 🔲 |
-| HMAC signature verification (HS256) | 🔲 |
-| JWKS / asymmetric verification (RS256) with key caching | 🔲 |
-| `exp` / `nbf` / `aud` / `iss` validation with configurable leeway | 🔲 |
-| Fail-closed: reject unsigned / unknown-alg / malformed tokens with 401 | 🔲 |
+| `JWTConfig` Pydantic schema with mutually-exclusive key source validation | 🔲 |
+| `auth/` package layout: `backend.py`, `verifier.py`, `keys.py`, `factory.py` | 🔲 |
+| `StaticKeyResolver` (env / file / url) + joserfc verifier | 🔲 |
+| Algorithm allow-list pinning (alg-confusion regression test) | 🔲 |
+| `exp` / `nbf` / `aud` / `iss` / `required_claims` validation with `leeway` | 🔲 |
+| RFC 6750 fail-closed: 401 + `WWW-Authenticate: Bearer error="invalid_token"` | 🔲 |
+| `JWKSResolver` (httpx async + `cachetools.TTLCache` + last-good fallback) | 🔲 |
+| Scope extraction (`scope` / `scp` / `roles` / configurable `roles_claim`) | 🔲 |
+| OTel `auth.jwt` counter with outcome attribute | 🔲 |
+| Remove trust-only path; switch to `joserfc`; drop PyJWT | 🔲 |
 
 ---
 
@@ -580,6 +583,27 @@ Multi-layer cache (parsed-doc LRU, compiled-plan LRU, result cache with TTL +
 singleflight) to protect the warehouse from bursts and cut response latency.
 Pluggable backend (in-mem default, Redis for multi-replica). Detailed plan:
 [`docs/plans/sec-j-caching.md`](docs/plans/sec-j-caching.md).
+
+---
+
+### Sec-M — Python Extension Hooks (placeholder)
+
+**Motivation:** Several features need user-supplied callables that don't
+fit cleanly into YAML — JWT key resolvers backed by Vault/KMS/HSM,
+custom mask functions, custom audit sinks, custom cache backends. Today
+each feature would invent its own dotted-path string in YAML, which
+is config-as-code laundered through a string and gives up
+discoverability and static checking.
+
+**Approach (sketch):** Superset's `superset_config.py` pattern — a
+single Python file the operator owns, evaluated at startup, where they
+register hooks via a stable extension API. Solves once for all
+extension points instead of per-feature.
+
+This is a placeholder. A full plan lands when the first feature
+actually needs it (likely Sec-A's exotic key sources or Sec-D's custom
+masks). Until then, all extension surfaces stay declarative and
+YAML-only.
 
 ---
 
